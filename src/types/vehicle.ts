@@ -94,7 +94,9 @@ export interface Vehicle {
   call_sign?: string;
 
   // Section 1 — Basic Vehicle Details
+  vehicle_model_id?: string;
   machine_model?: string;
+  vehicle_segment?: string;
   chassis_number?: string;
   registration_date?: string;
   engine_number?: string;

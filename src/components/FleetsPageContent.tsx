@@ -44,6 +44,8 @@ import { FleetImportModal } from './FleetImportModal';
 import { FleetExportModal } from './FleetExportModal';
 import { FleetHierarchyView } from './FleetHierarchyView';
 import { ColumnCataloguePopover } from './ColumnCataloguePopover';
+import { RowActionMenu } from './common/RowActionMenu';
+import { DeleteConfirmationModal } from './common/DeleteConfirmationModal';
 
 interface SavedFleetView {
   id: string;
@@ -125,9 +127,6 @@ export const FleetsPageContent: React.FC = () => {
   const [showCreateViewInput, setShowCreateViewInput] = useState(false);
   const [newViewName, setNewViewName] = useState('');
 
-  // Row ellipsis action menu
-  const [openRowActionId, setOpenRowActionId] = useState<string | null>(null);
-
   // Single Deletion Modals state
   const [fleetToDelete, setFleetToDelete] = useState<Fleet | null>(null);
   const [blockedDeleteReason, setBlockedDeleteReason] = useState<{ fleet: Fleet; reason: string } | null>(null);
@@ -154,17 +153,6 @@ export const FleetsPageContent: React.FC = () => {
       setToast(null);
     }, 3500);
   };
-
-  // Close row action dropdown on outside click
-  useEffect(() => {
-    const handleClickOutside = () => {
-      if (openRowActionId) {
-        setOpenRowActionId(null);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [openRowActionId]);
 
   // Fast map for parent name lookups
   const fleetMap = useMemo(() => {
@@ -390,7 +378,6 @@ export const FleetsPageContent: React.FC = () => {
 
   // Single Deletion Logic
   const handleInitiateSingleDelete = (fleet: Fleet) => {
-    setOpenRowActionId(null);
     const driverCount = fleet.driverIds ? fleet.driverIds.length : 0;
     const vehicleCount = fleet.vehicleIds ? fleet.vehicleIds.length : 0;
     const children = fleets.filter((f) => f.parent === fleet.id);
@@ -1023,8 +1010,8 @@ export const FleetsPageContent: React.FC = () => {
                   })}
 
                   {/* Sticky Right Actions Column */}
-                  <th className="w-12 px-2 py-3 text-center sticky right-0 bg-[#F8FAFC] border-l border-slate-200 z-10">
-                    <span className="sr-only">Actions</span>
+                  <th className="w-16 px-4 py-3 text-right font-bold text-slate-700 sticky right-0 bg-[#F8FAFC] border-l border-slate-200 z-10">
+                    Actions
                   </th>
                 </tr>
               </thead>
@@ -1032,7 +1019,6 @@ export const FleetsPageContent: React.FC = () => {
               <tbody className="divide-y divide-slate-100 text-xs">
                 {paginatedFleets.map((fleet) => {
                   const isSelected = selectedFleetIds.has(fleet.id);
-                  const isActionOpen = openRowActionId === fleet.id;
                   const counts = computeFleetCounts(fleet);
                   const statusDef = FLEET_STATUSES.find((s) => s.code === fleet.status);
                   const parentRecord = fleet.parent ? fleetMap.get(fleet.parent) : null;
@@ -1120,6 +1106,10 @@ export const FleetsPageContent: React.FC = () => {
                               <span className="font-mono font-semibold text-slate-600">
                                 {fleet.public_id}
                               </span>
+                            ) : col.key === 'company' ? (
+                              <span className="font-medium text-slate-700">
+                                {fleet.company || '—'}
+                              </span>
                             ) : col.key === 'drivers_count' ? (
                               <span className="font-bold text-slate-900">
                                 {counts.directDriversCount}
@@ -1127,6 +1117,14 @@ export const FleetsPageContent: React.FC = () => {
                             ) : col.key === 'drivers_online_count' ? (
                               <span className="font-semibold text-emerald-600">
                                 {counts.driversOnlineCount}
+                              </span>
+                            ) : col.key === 'vehicles_count' ? (
+                              <span className="font-bold text-slate-900">
+                                {counts.directVehiclesCount}
+                              </span>
+                            ) : col.key === 'vehicles_online_count' ? (
+                              <span className="font-semibold text-emerald-600">
+                                {counts.vehiclesOnlineCount}
                               </span>
                             ) : col.key === 'task' ? (
                               <span className="text-slate-600 truncate block max-w-[220px]">
@@ -1149,138 +1147,65 @@ export const FleetsPageContent: React.FC = () => {
 
                       {/* Sticky Right Actions Column */}
                       <td className="sticky right-0 bg-white/95 group-hover:bg-slate-50/95 border-l border-slate-200 px-3 py-3 text-right whitespace-nowrap z-10">
-                        <div className="inline-flex items-center justify-end gap-1 relative">
-                          <button
-                            type="button"
-                            onClick={() => setDrawerState({ isOpen: true, mode: 'view', fleet })}
-                            title="View fleet"
-                            className="p-1.5 rounded hover:bg-[#f1f5f9] text-[#5c6b7a] hover:text-[#17212b] cursor-pointer"
-                          >
-                            <Eye size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setDrawerState({ isOpen: true, mode: 'edit', fleet })}
-                            title="Edit fleet"
-                            className="p-1.5 rounded hover:bg-[#f1f5f9] text-[#5c6b7a] hover:text-[#FA8A63] cursor-pointer"
-                          >
-                            <Edit2 size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleInitiateSingleDelete(fleet)}
-                            title="Delete fleet"
-                            className="p-1.5 rounded hover:bg-rose-50 text-[#5c6b7a] hover:text-rose-600 cursor-pointer"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setOpenRowActionId(isActionOpen ? null : fleet.id);
-                            }}
-                            title="More actions"
-                            className="p-1.5 rounded hover:bg-[#f1f5f9] text-[#5c6b7a] hover:text-[#17212b] cursor-pointer"
-                          >
-                            <MoreVertical size={14} />
-                          </button>
-
-                          {/* 6 Exact Row Menu Actions */}
-                          {isActionOpen && (
-                            <div
-                              onClick={(e) => e.stopPropagation()}
-                              className="absolute right-0 top-8 w-52 bg-white border border-slate-200 rounded-xl shadow-xl py-1 z-40 text-xs animate-in fade-in zoom-in-95 duration-100 font-normal text-left"
-                            >
-                              {/* 1. View fleet */}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setDrawerState({ isOpen: true, mode: 'view', fleet });
-                                  setOpenRowActionId(null);
-                                }}
-                                className="w-full px-3 py-1.5 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
-                              >
-                                <Eye size={13} className="text-slate-400" />
-                                <span>View fleet</span>
-                              </button>
-
-                              {/* 2. Edit fleet */}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setDrawerState({ isOpen: true, mode: 'edit', fleet });
-                                  setOpenRowActionId(null);
-                                }}
-                                className="w-full px-3 py-1.5 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
-                              >
-                                <Edit2 size={13} className="text-slate-400" />
-                                <span>Edit fleet</span>
-                              </button>
-
-                              {/* 3. Assign / remove drivers */}
-                              <button
-                                type="button"
-                                onClick={() => {
+                        <div className="inline-flex items-center justify-end">
+                          <RowActionMenu
+                            ariaLabel={`Actions for ${fleet.name}`}
+                            items={[
+                              {
+                                id: 'view',
+                                label: 'View fleet',
+                                icon: <Eye size={13} className="text-slate-400" />,
+                                onClick: () => setDrawerState({ isOpen: true, mode: 'view', fleet }),
+                              },
+                              {
+                                id: 'edit',
+                                label: 'Edit fleet',
+                                icon: <Edit2 size={13} className="text-slate-400" />,
+                                onClick: () => setDrawerState({ isOpen: true, mode: 'edit', fleet }),
+                              },
+                              {
+                                id: 'drivers',
+                                label: 'Assign / remove drivers',
+                                icon: <Users size={13} className="text-blue-500" />,
+                                onClick: () =>
                                   setDrawerState({
                                     isOpen: true,
                                     mode: 'edit',
                                     fleet,
-                                    initialTab: 'drivers'
-                                  });
-                                  setOpenRowActionId(null);
-                                }}
-                                className="w-full px-3 py-1.5 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
-                              >
-                                <Users size={13} className="text-blue-500" />
-                                <span>Assign / remove drivers</span>
-                              </button>
-
-                              {/* 4. Assign / remove vehicles */}
-                              <button
-                                type="button"
-                                onClick={() => {
+                                    initialTab: 'drivers',
+                                  }),
+                              },
+                              {
+                                id: 'vehicles',
+                                label: 'Assign / remove vehicles',
+                                icon: <Truck size={13} className="text-orange-500" />,
+                                onClick: () =>
                                   setDrawerState({
                                     isOpen: true,
                                     mode: 'edit',
                                     fleet,
-                                    initialTab: 'vehicles'
-                                  });
-                                  setOpenRowActionId(null);
-                                }}
-                                className="w-full px-3 py-1.5 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
-                              >
-                                <Truck size={13} className="text-orange-500" />
-                                <span>Assign / remove vehicles</span>
-                              </button>
-
-                              {/* 5. View hierarchy */}
-                              <button
-                                type="button"
-                                onClick={() => {
+                                    initialTab: 'vehicles',
+                                  }),
+                              },
+                              {
+                                id: 'hierarchy',
+                                label: 'View hierarchy',
+                                icon: <GitFork size={13} className="text-purple-500" />,
+                                onClick: () => {
                                   setHighlightedHierarchyFleetId(fleet.id);
                                   setViewMode('hierarchy');
-                                  setOpenRowActionId(null);
-                                }}
-                                className="w-full px-3 py-1.5 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
-                              >
-                                <GitFork size={13} className="text-purple-500" />
-                                <span>View hierarchy</span>
-                              </button>
-
-                              <div className="h-px bg-slate-100 my-1" />
-
-                              {/* 6. Delete fleet */}
-                              <button
-                                type="button"
-                                onClick={() => handleInitiateSingleDelete(fleet)}
-                                className="w-full px-3 py-1.5 text-left text-red-600 hover:bg-red-50 flex items-center gap-2 cursor-pointer font-medium"
-                              >
-                                <Trash2 size={13} />
-                                <span>Delete fleet</span>
-                              </button>
-                            </div>
-                          )}
+                                },
+                              },
+                              {
+                                id: 'delete',
+                                label: 'Delete fleet',
+                                icon: <Trash2 size={13} />,
+                                tone: 'danger',
+                                dividerBefore: true,
+                                onClick: () => handleInitiateSingleDelete(fleet),
+                              },
+                            ]}
+                          />
                         </div>
                       </td>
                     </tr>
@@ -1373,36 +1298,61 @@ export const FleetsPageContent: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL: SINGLE DELETION CONFIRMATION */}
-      {fleetToDelete && (
-        <div className="fixed inset-0 z-60 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-6 animate-in fade-in duration-100">
-          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-sm w-full p-5 space-y-4">
-            <div className="flex items-center gap-2.5 text-red-600">
-              <Trash2 size={20} />
-              <h4 className="text-sm font-bold text-slate-900">Delete fleet?</h4>
-            </div>
-            <p className="text-xs text-slate-600">
-              Are you sure you want to delete <strong className="text-slate-900 font-bold">{fleetToDelete.name}</strong> ({fleetToDelete.public_id})? Deleting a fleet grouping removes only the organizing entity. Master Driver and Vehicle records are never deleted.
-            </p>
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setFleetToDelete(null)}
-                className="px-3.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmSingleDelete}
-                className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-lg shadow-xs"
-              >
-                Delete fleet
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* MODAL: SINGLE DELETION CONFIRMATION WITH CONFIRMATION CHIPS */}
+      <DeleteConfirmationModal
+        isOpen={Boolean(fleetToDelete)}
+        zIndexClass="z-[60]"
+        title="Delete fleet?"
+        description={
+          fleetToDelete ? (
+            <>
+              Are you sure you want to delete{' '}
+              <strong className="text-slate-900 font-bold">{fleetToDelete.name}</strong> (
+              {fleetToDelete.public_id})? Deleting a fleet grouping removes only the organizing
+              entity. Master Driver and Vehicle records are never deleted.
+            </>
+          ) : (
+            ''
+          )
+        }
+        confirmLabel="Delete fleet"
+        targetChips={
+          fleetToDelete
+            ? [
+                { id: 'name', label: fleetToDelete.name, tone: 'orange' },
+                { id: 'pid', label: fleetToDelete.public_id, tone: 'blue' },
+                {
+                  id: 'drivers',
+                  label: `${fleetToDelete.driverIds?.length || 0} Driver(s)`,
+                  tone: 'slate',
+                },
+                {
+                  id: 'vehicles',
+                  label: `${fleetToDelete.vehicleIds?.length || 0} Vehicle(s)`,
+                  tone: 'slate',
+                },
+              ]
+            : []
+        }
+        confirmationChips={
+          fleetToDelete
+            ? [
+                {
+                  id: 'safe-masters',
+                  label: 'Master Drivers & Vehicles Safe',
+                  tone: 'emerald',
+                },
+                {
+                  id: 'grouping-only',
+                  label: 'Grouping Entity Removal Only',
+                  tone: 'amber',
+                },
+              ]
+            : []
+        }
+        onCancel={() => setFleetToDelete(null)}
+        onConfirm={handleConfirmSingleDelete}
+      />
 
       {/* MODAL: BLOCKED DELETION REVIEW (PROTOTYPE SAFETY GUARD) */}
       {blockedDeleteReason && (

@@ -15,6 +15,11 @@ import {
   SavedModalView
 } from '../../types/modalMaster';
 import { ModelCategoryRecord } from '../../types/modelCategoryMaster';
+import {
+  DirectBulkUploadView,
+  formatUploadFileSize,
+  useDirectUploadState
+} from '../common/DirectBulkUploadView';
 
 export const MappingInfoTooltip: React.FC<{ text: string; align?: 'left' | 'right' | 'center' }> = ({
   text,
@@ -545,139 +550,144 @@ export const ModalConnectionExportModal: React.FC<ExportModalProps> = ({
 );
 
 interface ImportDrawerProps {
-  importFormat: 'csv' | 'json';
-  setImportFormat: (v: 'csv' | 'json') => void;
-  importText: string;
-  setImportText: (v: string) => void;
-  validCount: number;
-  invalidRows: { line: number; raw: string; reason: string }[];
-  onDownloadErrors: () => void;
-  onCommit: () => void;
+  onProcessUpload: (
+    format: 'csv' | 'json',
+    rawContent: string
+  ) => { uploaded: number; skipped: number; error?: string };
   onClose: () => void;
 }
 
-export const ModalConnectionImportDrawer: React.FC<ImportDrawerProps> = ({
-  importFormat,
-  setImportFormat,
-  importText,
-  setImportText,
-  validCount,
-  invalidRows,
-  onDownloadErrors,
-  onCommit,
-  onClose
-}) => (
-  <div className="fixed inset-0 z-[80] flex justify-end bg-slate-900/35">
-    <div className="w-full max-w-[540px] bg-white h-full shadow-2xl border-l border-slate-200 flex flex-col">
-      <div className="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Upload className="w-4 h-4 text-[#F26522]" />
-          <h3 className="text-[14px] font-bold text-slate-900">Import Connections (Prototype Validation)</h3>
-        </div>
-        <button type="button" onClick={onClose} className="p-1 rounded hover:bg-slate-100 text-slate-500 cursor-pointer">
-          <X className="w-4 h-4" />
-        </button>
-      </div>
+const SAMPLE_CONNECTION_CSV =
+  'name,client,hardwareIdentifier,status,site\n' +
+  'Mundra – Cold Gate Kit,Adani Mundra,861753060499955,Draft,Mundra CT2';
 
-      <div className="flex-1 overflow-y-auto p-5 space-y-4 text-[12px]">
-        <div className="flex items-center gap-2">
-          {(['csv', 'json'] as const).map((fmt) => (
-            <button
-              key={fmt}
-              type="button"
-              onClick={() => setImportFormat(fmt)}
-              className={`px-3 py-1.5 rounded-lg border font-semibold uppercase text-[11px] cursor-pointer ${
-                importFormat === fmt ? 'border-[#F26522] bg-[#FFF3EE] text-[#F26522]' : 'border-slate-200 text-slate-600'
-              }`}
-            >
-              {fmt}
-            </button>
-          ))}
+export const ModalConnectionImportDrawer: React.FC<ImportDrawerProps> = ({
+  onProcessUpload,
+  onClose
+}) => {
+  const upload = useDirectUploadState(true);
+
+  const runDirectUpload = (
+    fmt: 'csv' | 'json',
+    rawText: string,
+    fileName: string,
+    fileSize?: number
+  ) => {
+    const trimmed = rawText.trim();
+    if (!trimmed) {
+      upload.fail('Uploaded file is empty.');
+      return;
+    }
+
+    upload.startUploading(fileName, formatUploadFileSize(fileSize), () => {
+      const result = onProcessUpload(fmt, trimmed);
+      if (result.error || result.uploaded === 0) {
+        return {
+          headline: result.error || 'No valid connections imported',
+          description:
+            result.error ||
+            `0 valid connections found in ${fileName}${
+              result.skipped > 0 ? ` (${result.skipped} skipped due to missing or unknown hardware)` : ''
+            }.`,
+          stats: [
+            { label: 'Uploaded', value: 0, tone: 'slate' },
+            { label: 'Skipped', value: result.skipped, tone: 'amber' }
+          ]
+        };
+      }
+
+      return {
+        headline: 'Connections uploaded successfully',
+        description: `${result.uploaded} connection${result.uploaded === 1 ? '' : 's'} created from ${fileName}.${
+          result.skipped > 0 ? ` ${result.skipped} invalid or unmatched row${result.skipped === 1 ? '' : 's'} skipped.` : ''
+        }`,
+        stats: [
+          { label: 'Uploaded', value: result.uploaded, tone: 'emerald' },
+          { label: 'Skipped', value: result.skipped, tone: result.skipped > 0 ? 'amber' : 'slate' }
+        ]
+      };
+    });
+  };
+
+  const handleFileSelected = (file: File) => {
+    const lower = file.name.toLowerCase();
+    if (!lower.endsWith('.csv') && !lower.endsWith('.json')) {
+      upload.fail('Please upload a .csv or .json file.');
+      return;
+    }
+    const fmt: 'csv' | 'json' = lower.endsWith('.json') ? 'json' : 'csv';
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      runDirectUpload(fmt, String(ev.target?.result || ''), file.name, file.size);
+    };
+    reader.onerror = () => upload.fail('Unable to read the selected file.');
+    reader.readAsText(file);
+  };
+
+  const handleDownloadTemplate = () => {
+    const blob = new Blob([SAMPLE_CONNECTION_CSV], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'fleetrobo_connections_template.csv';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[80] flex justify-end bg-slate-900/35">
+      <div className="w-full max-w-[540px] bg-white h-full shadow-2xl border-l border-slate-200 flex flex-col">
+        <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <Upload className="w-4 h-4 text-[#F26522]" />
+              <h3 className="text-[14px] font-bold text-slate-900">Import Connections</h3>
+            </div>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Upload a CSV or JSON file to import connections directly.
+            </p>
+          </div>
           <button
             type="button"
-            onClick={() =>
-              setImportText(
-                importFormat === 'csv'
-                  ? 'name,client,hardwareIdentifier,status,site\nMundra – Cold Gate Kit,Adani Mundra,861753060499955,Draft,Mundra CT2\nInvalid Cross-Tenant Test,Adani Mundra,UNKNOWN-IMEI-999,Active,Mundra CT2'
-                  : JSON.stringify(
-                      [{ name: 'Mundra – Gate Kit JSON', client: 'Adani Mundra', hardwareIdentifier: '861753060499955', status: 'Draft', site: 'Mundra CT2' }],
-                      null,
-                      2
-                    )
-              )
-            }
-            className="ml-auto text-[11px] font-semibold text-[#F26522] hover:underline cursor-pointer"
+            onClick={onClose}
+            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 cursor-pointer"
           >
-            Load Sample Payload
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div>
-          <label className="block font-semibold text-slate-700 mb-1">
-            {importFormat === 'csv'
-              ? 'CSV columns: name, client, hardwareIdentifier, status, site'
-              : 'JSON array of { name, client, hardwareIdentifier, status, site }'}
-          </label>
-          <textarea
-            rows={7}
-            value={importText}
-            onChange={(e) => setImportText(e.target.value)}
-            placeholder="Paste CSV or JSON rows to validate client ownership, registered hardware identifiers, and model enablement..."
-            className="w-full p-3 rounded-xl border border-slate-200 font-mono text-[11px]"
+        <div className="flex-1 overflow-y-auto p-6">
+          <DirectBulkUploadView
+            status={upload.status}
+            progress={upload.progress}
+            fileLabel={upload.fileLabel}
+            fileMeta={upload.fileMeta}
+            errorMessage={upload.errorMessage}
+            doneSummary={upload.doneSummary}
+            accept=".csv,.json,text/csv,application/json"
+            dropTitle="Choose CSV / JSON or drag & drop"
+            dropSubtitle="Columns: name, client, hardwareIdentifier, status, site"
+            chooseButtonLabel="Choose file"
+            downloadLabel="Download template"
+            sampleLabel="Use sample CSV"
+            templateTitle="Need a starting format?"
+            templateSubtitle="Download CSV template or upload a sample connection."
+            doneButtonLabel="Done"
+            onFileSelected={handleFileSelected}
+            onDownloadTemplate={handleDownloadTemplate}
+            onUseSample={() =>
+              runDirectUpload('csv', SAMPLE_CONNECTION_CSV, 'sample_connections.csv', SAMPLE_CONNECTION_CSV.length)
+            }
+            onReset={upload.reset}
+            onDone={onClose}
           />
         </div>
-
-        {(validCount > 0 || invalidRows.length > 0) && (
-          <div className="space-y-2.5">
-            <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200">
-              <div className="flex items-center gap-3">
-                <span className="inline-flex items-center gap-1 text-emerald-700 font-bold">
-                  <CheckCircle2 className="w-4 h-4" /> {validCount} Valid
-                </span>
-                <span className="inline-flex items-center gap-1 text-rose-700 font-bold">
-                  <AlertTriangle className="w-4 h-4" /> {invalidRows.length} Rejected
-                </span>
-              </div>
-              {invalidRows.length > 0 && (
-                <button
-                  type="button"
-                  onClick={onDownloadErrors}
-                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700 hover:underline cursor-pointer"
-                >
-                  <Download className="w-3.5 h-3.5" /> Download Error Report
-                </button>
-              )}
-            </div>
-
-            {invalidRows.length > 0 && (
-              <div className="border border-rose-200 bg-rose-50/50 rounded-xl p-3 max-h-44 overflow-y-auto space-y-1.5">
-                {invalidRows.map((err) => (
-                  <div key={err.line} className="text-[11px] text-rose-800">
-                    <span className="font-bold">Line {err.line}:</span> {err.reason}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      <div className="px-5 py-3 border-t border-slate-200 flex justify-end gap-2 bg-slate-50">
-        <button type="button" onClick={onClose} className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-[12px] font-semibold cursor-pointer">
-          Cancel
-        </button>
-        <button
-          type="button"
-          disabled={validCount === 0}
-          onClick={onCommit}
-          className="h-8 px-4 rounded-lg bg-[#F26522] disabled:bg-slate-200 text-white text-[12px] font-semibold cursor-pointer"
-        >
-          Import {validCount} Valid Row(s)
-        </button>
       </div>
     </div>
-  </div>
-);
+  );
+};
 
 interface BulkDrawerProps {
   selectedCount: number;
@@ -711,8 +721,19 @@ export const ModalConnectionBulkDrawer: React.FC<BulkDrawerProps> = ({
       </div>
 
       <div className="p-5 space-y-3 text-[12px]">
-        <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-600">
-          {selectedCount} connection(s) selected · {activeSelectedCount} Active/Scheduled · {activeBindingsInSelection} active/scheduled pairwise binding(s).
+        <div className="flex flex-wrap gap-1.5">
+          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border border-slate-200 bg-slate-100 text-slate-700">
+            {selectedCount} Connection(s) Selected
+          </span>
+          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border border-amber-200 bg-amber-50 text-amber-800">
+            {activeSelectedCount} Active / Scheduled
+          </span>
+          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border border-rose-200 bg-rose-50 text-rose-700">
+            {activeBindingsInSelection} Open Binding(s)
+          </span>
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold border border-emerald-200 bg-emerald-50 text-emerald-700">
+            <CheckCircle2 className="w-3 h-3" /> Audit History Preserved
+          </span>
         </div>
 
         <button

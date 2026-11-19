@@ -22,6 +22,7 @@ import {
   Clock,
   Link2
 } from 'lucide-react';
+import { RowActionMenu } from '../common/RowActionMenu';
 import {
   ModalMasterStore,
   ResourceType,
@@ -1525,7 +1526,7 @@ export const ResourceRelationshipsPanel: React.FC<ResourceRelationshipsPanelProp
               <th className="px-3 py-2 min-w-[100px]">Validity</th>
               <th className="px-3 py-2 min-w-[145px]">Effective Start</th>
               <th className="px-3 py-2 min-w-[145px]">Effective End</th>
-              <th className="px-3 py-2 text-right min-w-[120px]">Actions</th>
+              <th className="px-3 py-2 text-right w-[72px]">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -1646,44 +1647,43 @@ export const ResourceRelationshipsPanel: React.FC<ResourceRelationshipsPanelProp
 
                     {/* Actions: View, Edit, History, Remove */}
                     <td className="px-3 py-2 text-right whitespace-nowrap align-middle">
-                      <div className="inline-flex items-center justify-end gap-1">
-                        <button
-                          type="button"
-                          title="View relationship & resource details"
-                          onClick={() => setInspectedState({ rel, tab: 'details' })}
-                          className="p-1 rounded text-slate-500 hover:text-slate-900 hover:bg-slate-100 cursor-pointer"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                        </button>
-                        {!isEnded && (
-                          <button
-                            type="button"
-                            title="Edit relationship"
-                            onClick={() => handleLoadIntoEdit(rel)}
-                            className="p-1 rounded text-slate-500 hover:text-[#F26522] hover:bg-orange-50 cursor-pointer"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          title="View relationship history"
-                          onClick={() => setInspectedState({ rel, tab: 'history' })}
-                          className="p-1 rounded text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 cursor-pointer"
-                        >
-                          <History className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          title={isEnded ? 'Remove ended record' : 'End or remove relationship'}
-                          onClick={() => {
-                            setRemoveReason('Operational reassignment completed');
-                            setConfirmRemoveRel(rel);
-                          }}
-                          className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                      <div className="inline-flex items-center justify-end">
+                        <RowActionMenu
+                          ariaLabel={`Actions for relationship ${rel.id}`}
+                          menuWidthClass="w-56"
+                          items={[
+                            {
+                              id: 'view',
+                              label: 'View details',
+                              icon: <Eye className="w-3.5 h-3.5 text-slate-400" />,
+                              onClick: () => setInspectedState({ rel, tab: 'details' }),
+                            },
+                            {
+                              id: 'edit',
+                              label: 'Edit relationship',
+                              icon: <Edit2 className="w-3.5 h-3.5 text-slate-400" />,
+                              hidden: isEnded,
+                              onClick: () => handleLoadIntoEdit(rel),
+                            },
+                            {
+                              id: 'history',
+                              label: 'View relationship history',
+                              icon: <History className="w-3.5 h-3.5 text-slate-400" />,
+                              onClick: () => setInspectedState({ rel, tab: 'history' }),
+                            },
+                            {
+                              id: 'remove',
+                              label: isEnded ? 'Remove ended record' : 'End / Remove relationship',
+                              icon: <Trash2 className="w-3.5 h-3.5" />,
+                              tone: 'danger',
+                              dividerBefore: true,
+                              onClick: () => {
+                                setRemoveReason('Operational reassignment completed');
+                                setConfirmRemoveRel(rel);
+                              },
+                            },
+                          ]}
+                        />
                       </div>
                     </td>
                   </tr>
@@ -1962,7 +1962,30 @@ export const ResourceRelationshipsPanel: React.FC<ResourceRelationshipsPanelProp
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="p-5 space-y-3 text-[12px]">
+            <div className="p-5 space-y-3.5 text-[12px]">
+              <div className="flex flex-wrap gap-1.5">
+                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border border-orange-200 bg-orange-50 text-[#B85324] font-mono">
+                  {confirmRemoveRel.id}
+                </span>
+                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border border-sky-200 bg-sky-50 text-sky-700">
+                  {confirmRemoveRel.sourceResourceIdentifier} → {confirmRemoveRel.targetResourceIdentifier}
+                </span>
+                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border border-purple-200 bg-purple-50 text-purple-700">
+                  {confirmRemoveRel.relationshipType}
+                </span>
+                <span
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold border ${
+                    !confirmRemoveRel.endedAt
+                      ? 'border-amber-200 bg-amber-50 text-amber-800'
+                      : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                  }`}
+                >
+                  {!confirmRemoveRel.endedAt ? 'Active Relationship' : 'Already Ended'}
+                </span>
+                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border border-rose-200 bg-rose-50 text-rose-700">
+                  Permanent Remove Available
+                </span>
+              </div>
               <p className="text-slate-600">
                 Are you sure you want to end or remove the relationship{' '}
                 <strong className="text-slate-900">

@@ -29,6 +29,13 @@ import {
   Building2
 } from 'lucide-react';
 import {
+  DirectBulkUploadView,
+  formatUploadFileSize,
+  useDirectUploadState
+} from './common/DirectBulkUploadView';
+import { RowActionMenu } from './common/RowActionMenu';
+import { DeleteConfirmationModal } from './common/DeleteConfirmationModal';
+import {
   DeviceRecord,
   GatewayCategory,
   HardwareLifecycleStatus,
@@ -301,13 +308,13 @@ export const DevicesMasterContent: React.FC<{ currentCompany?: string }> = ({
 
   // Bulk operation state
   const [bulkAction, setBulkAction] = useState<
-    'Update inventory status' | 'Decommission eligible'
+    'Update inventory status' | 'Decommission eligible' | 'Delete eligible'
   >('Update inventory status');
   const [bulkTargetStatus, setBulkTargetStatus] = useState<HardwareLifecycleStatus>('Active');
+  const [pendingBulkDelete, setPendingBulkDelete] = useState(false);
 
-  // Import state
-  const [importText, setImportText] = useState('');
-  const [importFormat, setImportFormat] = useState<'csv' | 'json'>('csv');
+  // Direct upload state
+  const deviceUpload = useDirectUploadState(activeDrawer === 'import');
 
   useEffect(() => {
     saveSavedModalViews(savedViews);
@@ -994,7 +1001,7 @@ export const DevicesMasterContent: React.FC<{ currentCompany?: string }> = ({
     const skipped: { record: DeviceRecord; reason: string }[] = [];
 
     selectedDeviceRecords.forEach((dev) => {
-      if (bulkAction === 'Decommission eligible') {
+      if (bulkAction === 'Decommission eligible' || bulkAction === 'Delete eligible') {
         const hasActiveConn = store.connections.some(
           (c) =>
             c.status === 'Active' &&
@@ -1016,8 +1023,36 @@ export const DevicesMasterContent: React.FC<{ currentCompany?: string }> = ({
     return { eligible, skipped };
   }, [selectedDeviceRecords, bulkAction, store.connections]);
 
+  const executeBulkDeleteDevices = (reason?: string) => {
+    const eligibleIds = new Set(bulkEligibility.eligible.map((d) => d.id));
+    if (eligibleIds.size === 0) return;
+
+    setStore((prev) => ({
+      ...prev,
+      devices: prev.devices.filter((d) => !eligibleIds.has(d.id))
+    }));
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      eligibleIds.forEach((id) => next.delete(id));
+      return next;
+    });
+    if (inspectedDevice && eligibleIds.has(inspectedDevice.id)) {
+      setInspectedDevice(null);
+    }
+    showToast(
+      `Deleted ${eligibleIds.size} device(s)${bulkEligibility.skipped.length > 0 ? `, ${bulkEligibility.skipped.length} skipped` : ''}${reason ? ` · ${reason}` : ''}`
+    );
+    setPendingBulkDelete(false);
+    setActiveDrawer(null);
+  };
+
   const handleApplyBulk = () => {
     if (selectedDeviceRecords.length === 0) return;
+    if (bulkAction === 'Delete eligible') {
+      if (bulkEligibility.eligible.length === 0) return;
+      setPendingBulkDelete(true);
+      return;
+    }
     const eligibleIds = new Set(bulkEligibility.eligible.map((d) => d.id));
     const todayStr = new Date().toISOString().slice(0, 10);
 
@@ -1041,10 +1076,13 @@ export const DevicesMasterContent: React.FC<{ currentCompany?: string }> = ({
     setActiveDrawer(null);
   };
 
-  // Import preview & execution
-  const importPreview = useMemo(() => {
-    const raw = importText.trim();
-    if (!raw) return { valid: [] as Partial<DeviceRecord>[], invalid: [] as { line: number; reason: string }[] };
+  // Direct CSV/JSON upload execution
+  const processDevicesUpload = (fmt: 'csv' | 'json', rawText: string, fileName: string, fileSize?: number) => {
+    const raw = rawText.trim();
+    if (!raw) {
+      deviceUpload.fail('Uploaded file is empty.');
+      return;
+    }
 
     const valid: Partial<DeviceRecord>[] = [];
     const invalid: { line: number; reason: string }[] = [];
@@ -1057,7 +1095,7 @@ export const DevicesMasterContent: React.FC<{ currentCompany?: string }> = ({
       ...store.sensors.map((s) => s.serial.toLowerCase())
     ]);
 
-    if (importFormat === 'json') {
+    if (fmt === 'json') {
       try {
         const parsed = JSON.parse(raw);
         const arr = Array.isArray(parsed) ? parsed : [parsed];
@@ -1093,14 +1131,15 @@ export const DevicesMasterContent: React.FC<{ currentCompany?: string }> = ({
           });
         });
       } catch {
-        invalid.push({ line: 1, reason: 'Invalid JSON syntax' });
+        deviceUpload.fail('Invalid JSON syntax.');
+        return;
       }
     } else {
       const lines = raw.split(/\r?\n/).filter((l) => l.trim().length > 0);
       lines.forEach((line, idx) => {
         const cols = parseCsvLine(line);
         if (idx === 0 && cols[0]?.toLowerCase().includes('device')) {
-          return; // header row
+          return;
         }
         const [name, deviceId, kind, manufacturer, modelText, mode, serial, imei, company, inventoryLocation, hardwareLifecycle] = cols;
         if (!name || !deviceId || !serial) {
@@ -1137,43 +1176,55 @@ export const DevicesMasterContent: React.FC<{ currentCompany?: string }> = ({
       });
     }
 
-    return { valid, invalid };
-  }, [importText, importFormat, store.devices, store.sensors]);
+    if (valid.length === 0) {
+      deviceUpload.fail(
+        invalid[0]?.reason || 'No valid new device rows found (duplicates or missing required fields).'
+      );
+      return;
+    }
 
-  const handleCommitImport = () => {
-    if (importPreview.valid.length === 0) return;
-    const todayStr = new Date().toISOString().slice(0, 10);
-    const created: DeviceRecord[] = importPreview.valid.map((v, i) => ({
-      id: `dev-import-${Date.now()}-${i}`,
-      deviceId: v.deviceId!,
-      name: v.name!,
-      kind: (v.kind as GatewayCategory) || 'GPS',
-      role: 'gateway',
-      manufacturer: v.manufacturer || 'Teltonika',
-      modelText: v.modelText || 'FMB120',
-      mode: v.mode || 'GPS tracking',
-      serial: v.serial!,
-      imei: v.imei || '',
-      capabilities: ['Cellular', 'BLE'],
-      platformProtocol: 'MQTT',
-      company: v.company || 'Adani Port',
-      inventoryLocation: v.inventoryLocation || 'Mundra CT2',
-      hardwareLifecycle: (v.hardwareLifecycle as HardwareLifecycleStatus) || 'Inventory',
-      registeredAt: todayStr,
-      updatedAt: todayStr,
-      channelCount: 4,
-      notes: 'Imported via bulk CSV/JSON'
-    }));
+    deviceUpload.startUploading(fileName, formatUploadFileSize(fileSize), () => {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const created: DeviceRecord[] = valid.map((v, i) => ({
+        id: `dev-import-${Date.now()}-${i}`,
+        deviceId: v.deviceId!,
+        name: v.name!,
+        kind: (v.kind as GatewayCategory) || 'GPS',
+        role: 'gateway',
+        manufacturer: v.manufacturer || 'Teltonika',
+        modelText: v.modelText || 'FMB120',
+        mode: v.mode || 'GPS tracking',
+        serial: v.serial!,
+        imei: v.imei || '',
+        capabilities: ['Cellular', 'BLE'],
+        platformProtocol: 'MQTT',
+        company: v.company || 'Adani Port',
+        inventoryLocation: v.inventoryLocation || 'Mundra CT2',
+        hardwareLifecycle: (v.hardwareLifecycle as HardwareLifecycleStatus) || 'Inventory',
+        registeredAt: todayStr,
+        updatedAt: todayStr,
+        channelCount: 4,
+        notes: 'Imported via bulk CSV/JSON'
+      }));
 
-    setStore((prev) => ({
-      ...prev,
-      devices: [...created, ...prev.devices]
-    }));
-    setSortKey('');
-    setCurrentPage(1);
-    showToast(`Imported ${created.length} Device(s) (${importPreview.invalid.length} skipped).`);
-    setImportText('');
-    setActiveDrawer(null);
+      setStore((prev) => ({
+        ...prev,
+        devices: [...created, ...prev.devices]
+      }));
+      setSortKey('');
+      setCurrentPage(1);
+      showToast(`Imported ${created.length} Device(s) (${invalid.length} skipped).`);
+      return {
+        headline: 'Devices uploaded successfully',
+        description: `${created.length} device record${created.length === 1 ? '' : 's'} imported from ${fileName}.${
+          invalid.length > 0 ? ` ${invalid.length} duplicate or invalid row${invalid.length === 1 ? '' : 's'} skipped.` : ''
+        }`,
+        stats: [
+          { label: 'Uploaded', value: created.length, tone: 'emerald' },
+          { label: 'Skipped', value: invalid.length, tone: invalid.length > 0 ? 'amber' : 'slate' }
+        ]
+      };
+    });
   };
 
   // Lifecycle pill styling matching specification
@@ -1523,7 +1574,7 @@ export const DevicesMasterContent: React.FC<{ currentCompany?: string }> = ({
                       </th>
                     );
                   })}
-                  <th className="sticky right-0 bg-[#f8fafc] px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-[#5c6b7a] text-right border-l border-[#e3e8ee] w-[110px]">
+                  <th className="sticky right-0 bg-[#f8fafc] px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-[#5c6b7a] text-right border-l border-[#e3e8ee] w-[76px]">
                     Actions
                   </th>
                 </tr>
@@ -1622,31 +1673,32 @@ export const DevicesMasterContent: React.FC<{ currentCompany?: string }> = ({
                           );
                         })}
                         <td className="sticky right-0 bg-white px-3 py-2.5 text-right border-l border-[#edf1f5] whitespace-nowrap">
-                          <div className="inline-flex items-center justify-end gap-1">
-                            <button
-                              type="button"
-                              onClick={() => openInspector(row)}
-                              title="View details"
-                              className="p-1.5 rounded hover:bg-[#f1f5f9] text-[#5c6b7a] hover:text-[#17212b] cursor-pointer"
-                            >
-                              <Eye size={14} />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenEdit(row)}
-                              title="Edit"
-                              className="p-1.5 rounded hover:bg-[#f1f5f9] text-[#5c6b7a] hover:text-[#FA8A63] cursor-pointer"
-                            >
-                              <Edit2 size={14} />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setDeviceToDelete(row)}
-                              title="Delete device"
-                              className="p-1.5 rounded hover:bg-rose-50 text-[#5c6b7a] hover:text-rose-600 cursor-pointer"
-                            >
-                              <Trash2 size={14} />
-                            </button>
+                          <div className="inline-flex items-center justify-end">
+                            <RowActionMenu
+                              ariaLabel={`Actions for ${row.name}`}
+                              items={[
+                                {
+                                  id: 'view',
+                                  label: 'View details',
+                                  icon: <Eye size={14} className="text-slate-400" />,
+                                  onClick: () => openInspector(row),
+                                },
+                                {
+                                  id: 'edit',
+                                  label: 'Edit device',
+                                  icon: <Edit2 size={14} className="text-slate-400" />,
+                                  onClick: () => handleOpenEdit(row),
+                                },
+                                {
+                                  id: 'delete',
+                                  label: 'Delete device',
+                                  icon: <Trash2 size={14} />,
+                                  tone: 'danger',
+                                  dividerBefore: true,
+                                  onClick: () => setDeviceToDelete(row),
+                                },
+                              ]}
+                            />
                           </div>
                         </td>
                       </tr>
@@ -2888,6 +2940,7 @@ export const DevicesMasterContent: React.FC<{ currentCompany?: string }> = ({
                       >
                         <option value="Update inventory status">Update inventory status</option>
                         <option value="Decommission eligible">Decommission eligible</option>
+                        <option value="Delete eligible">Delete eligible</option>
                       </select>
                     </div>
 
@@ -2912,17 +2965,32 @@ export const DevicesMasterContent: React.FC<{ currentCompany?: string }> = ({
                       </div>
                     )}
 
-                    {bulkAction === 'Decommission eligible' && (
+                    {(bulkAction === 'Decommission eligible' || bulkAction === 'Delete eligible') && (
                       <div className="p-3.5 rounded-lg border border-[#fed7aa] bg-[#fff7ed] text-[12px] text-[#b45309]">
                         Devices linked to an <strong>Active</strong> connection in Modal Mapping are
-                        protected and automatically skipped during bulk decommissioning.
+                        protected and automatically skipped during bulk{' '}
+                        {bulkAction === 'Delete eligible' ? 'deletion' : 'decommissioning'}.
                       </div>
                     )}
+
+                    <div className="flex flex-wrap gap-1.5">
+                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border border-slate-200 bg-slate-100 text-slate-700">
+                        {selectedDeviceRecords.length} Selected
+                      </span>
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold border border-emerald-200 bg-emerald-50 text-emerald-700">
+                        <CheckCircle2 size={12} /> {bulkEligibility.eligible.length} Eligible
+                      </span>
+                      {bulkEligibility.skipped.length > 0 && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold border border-amber-200 bg-amber-50 text-amber-800">
+                          <AlertTriangle size={12} /> {bulkEligibility.skipped.length} Protected / Skipped
+                        </span>
+                      )}
+                    </div>
 
                     <div className="grid grid-cols-2 gap-3">
                       <div className="p-3 rounded-lg border border-[#b9ebd0] bg-[#eaf8f0]">
                         <div className="text-[11px] text-[#0f7b4b] font-semibold">
-                          Eligible to update
+                          {bulkAction === 'Delete eligible' ? 'Eligible to delete' : 'Eligible to update'}
                         </div>
                         <div className="text-[20px] font-bold text-[#0f7b4b]">
                           {bulkEligibility.eligible.length}
@@ -2969,22 +3037,28 @@ export const DevicesMasterContent: React.FC<{ currentCompany?: string }> = ({
                 <button
                   disabled={bulkEligibility.eligible.length === 0}
                   onClick={handleApplyBulk}
-                  className="px-4 py-2 rounded-[7px] bg-[#e56b38] hover:bg-[#d15b2a] disabled:opacity-40 text-white text-[12px] font-semibold cursor-pointer"
+                  className={`px-4 py-2 rounded-[7px] disabled:opacity-40 text-white text-[12px] font-semibold cursor-pointer ${
+                    bulkAction === 'Delete eligible'
+                      ? 'bg-rose-600 hover:bg-rose-700'
+                      : 'bg-[#e56b38] hover:bg-[#d15b2a]'
+                  }`}
                 >
-                  Apply to {bulkEligibility.eligible.length} eligible record(s)
+                  {bulkAction === 'Delete eligible'
+                    ? `Delete ${bulkEligibility.eligible.length} eligible device(s)`
+                    : `Apply to ${bulkEligibility.eligible.length} eligible record(s)`}
                 </button>
               </div>
             </div>
           )}
 
-          {/* 7. IMPORT DRAWER */}
+          {/* 7. DIRECT IMPORT DRAWER */}
           {activeDrawer === 'import' && (
             <div className="w-[620px] max-w-[96vw] h-full bg-white shadow-2xl border-l border-[#e3e8ee] flex flex-col z-50">
               <div className="px-5 py-4 border-b border-[#e3e8ee] flex items-center justify-between">
                 <div>
                   <h2 className="text-[16px] font-bold text-[#17212b]">Import Devices</h2>
                   <p className="text-[12px] text-[#5c6b7a] mt-0.5">
-                    Import Gateway Devices via CSV or JSON. Duplicate Device IDs or Serial numbers across Devices and Sensors are skipped.
+                    Upload a CSV or JSON file to register gateway devices directly.
                   </p>
                 </div>
                 <button
@@ -2995,182 +3069,181 @@ export const DevicesMasterContent: React.FC<{ currentCompany?: string }> = ({
                 </button>
               </div>
 
-              <div className="p-5 flex-1 overflow-y-auto space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setImportFormat('csv')}
-                      className={`px-3 py-1.5 rounded-[7px] text-[12px] font-semibold border cursor-pointer ${
-                        importFormat === 'csv'
-                          ? 'border-[#f1b79d] bg-[#fff4ee] text-[#9e431c]'
-                          : 'border-[#d6dfe8] bg-white text-[#5c6b7a]'
-                      }`}
-                    >
-                      CSV Format
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setImportFormat('json')}
-                      className={`px-3 py-1.5 rounded-[7px] text-[12px] font-semibold border cursor-pointer ${
-                        importFormat === 'json'
-                          ? 'border-[#f1b79d] bg-[#fff4ee] text-[#9e431c]'
-                          : 'border-[#d6dfe8] bg-white text-[#5c6b7a]'
-                      }`}
-                    >
-                      JSON Format
-                    </button>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const suffix = Math.floor(100 + Math.random() * 899);
-                      if (importFormat === 'csv') {
-                        setImportText(
-                          `Device name,Device ID,Device category,Vendor / Manufacturer,Model,Mode,Serial number,IMEI,Owner,Inventory location,Inventory status\n` +
-                            `ADAS/DMS — Mettax MC202N · Mundra Hub ${suffix},GTW-9${suffix},ADAS/DMS,Mettax,MC202N,ADAS + DMS,SN-GTW-9${suffix},864019283799${suffix},Adani Port,Mundra CT2,Inventory`
-                        );
-                      } else {
-                        setImportText(
-                          JSON.stringify(
-                            [
-                              {
-                                name: `CCTV — Hikvision DS-7104HGHI-M1/T · Hazira ${suffix}`,
-                                deviceId: `GTW-8${suffix}`,
-                                kind: 'CCTV',
-                                manufacturer: 'Hikvision',
-                                modelText: 'DS-7104HGHI-M1/T',
-                                mode: 'CAM1',
-                                serial: `SN-GTW-8${suffix}`,
-                                company: 'Adani Port',
-                                inventoryLocation: 'Hazira Terminal',
-                                hardwareLifecycle: 'Inventory'
-                              }
-                            ],
-                            null,
-                            2
-                          )
-                        );
-                      }
-                    }}
-                    className="text-[12px] font-semibold text-[#9e431c] hover:underline cursor-pointer"
-                  >
-                    Load sample {importFormat.toUpperCase()}
-                  </button>
-                </div>
-
-                <div>
-                  <label className="block text-[12px] font-semibold text-[#17212b] mb-1.5">
-                    Upload `.csv` or `.json` file or paste rows below
-                  </label>
-                  <input
-                    type="file"
-                    accept=".csv,.json,text/csv,application/json"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-                      if (file.name.endsWith('.json')) setImportFormat('json');
-                      else setImportFormat('csv');
-                      const reader = new FileReader();
-                      reader.onload = (ev) => {
-                        setImportText(String(ev.target?.result || ''));
-                      };
-                      reader.readAsText(file);
-                    }}
-                    className="block w-full text-[12px] text-[#5c6b7a] file:mr-3 file:py-1.5 file:px-3 file:rounded-[7px] file:border file:border-[#d6dfe8] file:bg-[#f8fafc] file:text-[12px] file:font-semibold file:text-[#17212b] hover:file:bg-slate-100 mb-2.5"
-                  />
-                  <textarea
-                    rows={6}
-                    value={importText}
-                    onChange={(e) => setImportText(e.target.value)}
-                    placeholder="Paste CSV lines or JSON array here..."
-                    className="w-full p-3 rounded-[7px] border border-[#d6dfe8] font-mono text-[11.5px] focus:outline-none focus:border-[#e56b38]"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="p-3 rounded-lg border border-[#b9ebd0] bg-[#eaf8f0]">
-                    <div className="text-[11px] font-semibold text-[#0f7b4b]">Valid new rows</div>
-                    <div className="text-[18px] font-bold text-[#0f7b4b]">
-                      {importPreview.valid.length}
-                    </div>
-                  </div>
-                  <div className="p-3 rounded-lg border border-[#fecaca] bg-[#fef2f2]">
-                    <div className="text-[11px] font-semibold text-[#dc2626]">
-                      Invalid / Duplicate rows
-                    </div>
-                    <div className="text-[18px] font-bold text-[#dc2626]">
-                      {importPreview.invalid.length}
-                    </div>
-                  </div>
-                </div>
-
-                {importPreview.invalid.length > 0 && (
-                  <div className="p-3 rounded-lg border border-[#fecaca] bg-[#fef2f2] space-y-1 text-[11px] text-[#dc2626]">
-                    {importPreview.invalid.map((err, i) => (
-                      <div key={i}>
-                        Line {err.line}: {err.reason}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="px-5 py-3.5 border-t border-[#e3e8ee] bg-[#f8fafc] flex items-center justify-end gap-2">
-                <button
-                  onClick={() => setActiveDrawer(null)}
-                  className="px-4 py-2 rounded-[7px] border border-[#d6dfe8] bg-white text-[12px] font-semibold text-[#5c6b7a] cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  disabled={importPreview.valid.length === 0}
-                  onClick={handleCommitImport}
-                  className="px-4 py-2 rounded-[7px] bg-[#e56b38] hover:bg-[#d15b2a] disabled:opacity-40 text-white text-[12px] font-semibold cursor-pointer"
-                >
-                  Import {importPreview.valid.length} valid row(s)
-                </button>
+              <div className="p-6 flex-1 overflow-y-auto">
+                <DirectBulkUploadView
+                  status={deviceUpload.status}
+                  progress={deviceUpload.progress}
+                  fileLabel={deviceUpload.fileLabel}
+                  fileMeta={deviceUpload.fileMeta}
+                  errorMessage={deviceUpload.errorMessage}
+                  doneSummary={deviceUpload.doneSummary}
+                  accept=".csv,.json,text/csv,application/json"
+                  dropTitle="Choose CSV / JSON or drag & drop"
+                  dropSubtitle="Import gateway devices directly. Duplicate IDs or Serial numbers are automatically skipped."
+                  chooseButtonLabel="Choose file"
+                  downloadLabel="Download template"
+                  sampleLabel="Use sample CSV"
+                  templateTitle="Need a starting format?"
+                  templateSubtitle="Download CSV template or upload a sample gateway device."
+                  doneButtonLabel="Done"
+                  onFileSelected={(file) => {
+                    const lower = file.name.toLowerCase();
+                    if (!lower.endsWith('.csv') && !lower.endsWith('.json')) {
+                      deviceUpload.fail('Please upload a .csv or .json file.');
+                      return;
+                    }
+                    const fmt: 'csv' | 'json' = lower.endsWith('.json') ? 'json' : 'csv';
+                    const reader = new FileReader();
+                    reader.onload = (ev) =>
+                      processDevicesUpload(fmt, String(ev.target?.result || ''), file.name, file.size);
+                    reader.onerror = () => deviceUpload.fail('Unable to read the selected file.');
+                    reader.readAsText(file);
+                  }}
+                  onDownloadTemplate={() => {
+                    const csv =
+                      'Device name,Device ID,Device category,Vendor / Manufacturer,Model,Mode,Serial number,IMEI,Owner,Inventory location,Inventory status\n' +
+                      'ADAS/DMS — Mettax MC202N · Mundra Hub,GTW-9101,ADAS/DMS,Mettax,MC202N,ADAS + DMS,SN-GTW-9101,864019283799101,Adani Port,Mundra CT2,Inventory';
+                    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'fleetrobo_devices_template.csv';
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                  onUseSample={() => {
+                    const suffix = Math.floor(100 + Math.random() * 899);
+                    const sampleCsv =
+                      `Device name,Device ID,Device category,Vendor / Manufacturer,Model,Mode,Serial number,IMEI,Owner,Inventory location,Inventory status\n` +
+                      `ADAS/DMS — Mettax MC202N · Mundra Hub ${suffix},GTW-9${suffix},ADAS/DMS,Mettax,MC202N,ADAS + DMS,SN-GTW-9${suffix},864019283799${suffix},Adani Port,Mundra CT2,Inventory`;
+                    processDevicesUpload('csv', sampleCsv, `sample_devices_${suffix}.csv`, sampleCsv.length);
+                  }}
+                  onReset={deviceUpload.reset}
+                  onDone={() => setActiveDrawer(null)}
+                />
               </div>
             </div>
           )}
         </div>
       )}
 
-      {/* Delete Device Confirmation Modal */}
-      {deviceToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 shrink-0">
-                <Trash2 size={20} />
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-slate-900">Delete Device?</h4>
-                <p className="text-xs text-slate-600 mt-1">
-                  Are you sure you want to delete <strong className="text-slate-900 font-semibold">{deviceToDelete.name}</strong> ({deviceToDelete.deviceId})? This device will be permanently removed from inventory.
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setDeviceToDelete(null)}
-                className="px-3.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmDeleteDevice}
-                className="px-3.5 py-1.5 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg shadow-sm cursor-pointer"
-              >
-                Delete Device
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Delete Device Confirmation Modal with Confirmation Chips */}
+      {(() => {
+        if (!deviceToDelete) return null;
+        const activeLinks = store.connections.filter(
+          (c) =>
+            c.status === 'Active' &&
+            (c.memberIds?.includes(deviceToDelete.id) ||
+              c.hardwareId === deviceToDelete.id ||
+              c.parentId === deviceToDelete.id)
+        );
+        return (
+          <DeleteConfirmationModal
+            isOpen={Boolean(deviceToDelete)}
+            title="Delete Device?"
+            description={
+              <>
+                Are you sure you want to delete{' '}
+                <strong className="text-slate-900 font-semibold">{deviceToDelete.name}</strong> (
+                {deviceToDelete.deviceId})? This device will be permanently removed from inventory.
+              </>
+            }
+            confirmLabel="Delete Device"
+            targetChips={[
+              { id: 'devId', label: deviceToDelete.deviceId, tone: 'orange' },
+              { id: 'kind', label: deviceToDelete.kind, tone: 'blue' },
+              {
+                id: 'model',
+                label: `${deviceToDelete.manufacturer} · ${deviceToDelete.modelText}`,
+                tone: 'slate',
+              },
+              { id: 'org', label: deviceToDelete.company, tone: 'purple' },
+              {
+                id: 'status',
+                label: deviceToDelete.hardwareLifecycle,
+                tone: deviceToDelete.hardwareLifecycle === 'Active' ? 'emerald' : 'slate',
+              },
+            ]}
+            confirmationChips={[
+              activeLinks.length > 0
+                ? {
+                    id: 'conn-link',
+                    label: `Linked in ${activeLinks.length} Active Connection(s)`,
+                    tone: 'amber',
+                  }
+                : {
+                    id: 'conn-link',
+                    label: 'Safe to Delete · No Active Connection',
+                    tone: 'emerald',
+                  },
+              {
+                id: 'scope',
+                label: 'Permanent Inventory Removal',
+                tone: 'rose',
+              },
+            ]}
+            warningNote={
+              activeLinks.length > 0 ? (
+                <>
+                  This device is currently referenced in{' '}
+                  <strong>{activeLinks.map((c) => c.connectionId || c.id).join(', ')}</strong>.
+                  Removing it will detach it from future telemetry queries.
+                </>
+              ) : undefined
+            }
+            onCancel={() => setDeviceToDelete(null)}
+            onConfirm={handleConfirmDeleteDevice}
+          />
+        );
+      })()}
+
+      {/* Bulk Delete Devices Confirmation Modal with Confirmation Chips */}
+      <DeleteConfirmationModal
+        isOpen={pendingBulkDelete}
+        title={`Delete ${bulkEligibility.eligible.length} Eligible Device(s)?`}
+        description="Permanently remove eligible selected gateway devices from inventory. Devices linked to Active Modal Mapping connections are automatically excluded."
+        confirmLabel={`Confirm Delete (${bulkEligibility.eligible.length})`}
+        targetChips={[
+          ...bulkEligibility.eligible.slice(0, 5).map((d) => ({
+            id: d.id,
+            label: d.deviceId,
+            sublabel: d.name,
+            tone: 'orange' as const,
+          })),
+          ...(bulkEligibility.eligible.length > 5
+            ? [
+                {
+                  id: 'more-devs',
+                  label: `+${bulkEligibility.eligible.length - 5} more`,
+                  tone: 'slate' as const,
+                },
+              ]
+            : []),
+        ]}
+        confirmationChips={[
+          {
+            id: 'selected',
+            label: `${selectedDeviceRecords.length} Selected`,
+            tone: 'slate',
+          },
+          {
+            id: 'eligible',
+            label: `${bulkEligibility.eligible.length} Eligible to Delete`,
+            tone: 'emerald',
+          },
+          ...(bulkEligibility.skipped.length > 0
+            ? [
+                {
+                  id: 'skipped',
+                  label: `${bulkEligibility.skipped.length} Skipped (Active Connection)`,
+                  tone: 'amber' as const,
+                },
+              ]
+            : []),
+        ]}
+        onCancel={() => setPendingBulkDelete(false)}
+        onConfirm={executeBulkDeleteDevices}
+      />
     </div>
   );
 };

@@ -55,6 +55,8 @@ import { DriverExportModal } from './DriverExportModal';
 import { DriverTransferHistoryModal } from './DriverTransferHistoryModal';
 import { InfoTooltip } from './InfoTooltip';
 import { ColumnCataloguePopover } from './ColumnCataloguePopover';
+import { RowActionMenu } from './common/RowActionMenu';
+import { DeleteConfirmationModal } from './common/DeleteConfirmationModal';
 
 interface SavedView {
   id: string;
@@ -177,9 +179,6 @@ export const DriversPageContent: React.FC<DriversPageContentProps> = ({ companyC
   const [newViewName, setNewViewName] = useState('');
   const [showCreateViewInput, setShowCreateViewInput] = useState(false);
 
-  // Row Action Dropdown state
-  const [openActionRowId, setOpenActionRowId] = useState<string | null>(null);
-
   // Modals & Drawers state
   const [drawerState, setDrawerState] = useState<{
     isOpen: boolean;
@@ -215,17 +214,6 @@ export const DriversPageContent: React.FC<DriversPageContentProps> = ({ companyC
       setToast(null);
     }, 3500);
   };
-
-  // Close row action dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = () => {
-      if (openActionRowId) {
-        setOpenActionRowId(null);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [openActionRowId]);
 
   const scopedDrivers = useMemo(() => {
     if (!companyContext || companyContext === 'Platform Admin' || companyContext === 'Binary') return drivers;
@@ -512,7 +500,6 @@ export const DriversPageContent: React.FC<DriversPageContentProps> = ({ companyC
       prev.map((d) => (d.id === driver.id ? { ...d, status: nextStatus } : d))
     );
     showToast(`Driver ${driver.name} is now ${nextStatus}`);
-    setOpenActionRowId(null);
   };
 
   const handleLogHistory = (job: Omit<TransferHistoryJob, 'id' | 'timestamp'>) => {
@@ -1196,8 +1183,8 @@ export const DriversPageContent: React.FC<DriversPageContentProps> = ({ companyC
                   })}
 
                   {/* Sticky Right Actions Column */}
-                  <th className="w-12 px-2 py-3 text-center sticky right-0 bg-[#F8FAFC] border-l border-slate-200 z-10">
-                    <span className="sr-only">Actions</span>
+                  <th className="w-16 px-4 py-3 text-right font-bold text-slate-700 sticky right-0 bg-[#F8FAFC] border-l border-slate-200 z-10">
+                    Actions
                   </th>
                 </tr>
               </thead>
@@ -1206,7 +1193,6 @@ export const DriversPageContent: React.FC<DriversPageContentProps> = ({ companyC
                 {paginatedDrivers.map((driver) => {
                   const isSelected = selectedDriverIds.has(driver.id);
                   const badges = deriveDriverBadges(driver);
-                  const isActionOpen = openActionRowId === driver.id;
 
                   return (
                     <tr
@@ -1435,107 +1421,58 @@ export const DriversPageContent: React.FC<DriversPageContentProps> = ({ companyC
 
                       {/* Sticky Right Actions Column */}
                       <td className="sticky right-0 bg-white/95 group-hover:bg-slate-50/95 border-l border-slate-200 px-3 py-3 text-right whitespace-nowrap z-10">
-                        <div className="inline-flex items-center justify-end gap-1 relative">
-                          <button
-                            type="button"
-                            onClick={() => setDrawerState({ isOpen: true, mode: 'view', driver })}
-                            title="View driver details"
-                            className="p-1.5 rounded hover:bg-[#f1f5f9] text-[#5c6b7a] hover:text-[#17212b] cursor-pointer"
-                          >
-                            <Eye size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setDrawerState({ isOpen: true, mode: 'edit', driver })}
-                            title="Edit driver profile"
-                            className="p-1.5 rounded hover:bg-[#f1f5f9] text-[#5c6b7a] hover:text-[#FA8A63] cursor-pointer"
-                          >
-                            <Edit2 size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setDriverToDelete(driver)}
-                            title="Delete driver"
-                            className="p-1.5 rounded hover:bg-rose-50 text-[#5c6b7a] hover:text-rose-600 cursor-pointer"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setOpenActionRowId(isActionOpen ? null : driver.id);
-                            }}
-                            title="More actions"
-                            className="p-1.5 rounded hover:bg-[#f1f5f9] text-[#5c6b7a] hover:text-[#17212b] cursor-pointer"
-                          >
-                            <MoreVertical size={14} />
-                          </button>
-
-                          {isActionOpen && (
-                            <div
-                              onClick={(e) => e.stopPropagation()}
-                              className="absolute right-0 top-8 w-52 bg-white border border-slate-200 rounded-xl shadow-xl py-1 z-40 text-xs animate-in fade-in zoom-in-95 duration-100 font-normal text-left"
-                            >
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setDrawerState({ isOpen: true, mode: 'edit', driver, initialTab: 0 });
-                                  setOpenActionRowId(null);
-                                }}
-                                className="w-full px-3 py-1.5 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
-                              >
-                                <UserCheck size={13} className="text-blue-500" />
-                                <span>Manage user account</span>
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setDrawerState({ isOpen: true, mode: 'edit', driver, initialTab: 6 });
-                                  setOpenActionRowId(null);
-                                }}
-                                className="w-full px-3 py-1.5 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
-                              >
-                                <FileText size={13} className="text-emerald-500" />
-                                <span>Upload compliance docs</span>
-                              </button>
-
-                              <div className="h-px bg-slate-100 my-1" />
-
-                              <button
-                                type="button"
-                                onClick={() => handleToggleDriverStatus(driver)}
-                                className="w-full px-3 py-1.5 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
-                              >
-                                {driver.status === 'Active' ? (
-                                  <>
+                        <div className="inline-flex items-center justify-end">
+                          <RowActionMenu
+                            ariaLabel={`Actions for ${driver.name}`}
+                            items={[
+                              {
+                                id: 'view',
+                                label: 'View driver details',
+                                icon: <Eye size={13} className="text-slate-400" />,
+                                onClick: () => setDrawerState({ isOpen: true, mode: 'view', driver }),
+                              },
+                              {
+                                id: 'edit',
+                                label: 'Edit driver profile',
+                                icon: <Edit2 size={13} className="text-slate-400" />,
+                                onClick: () => setDrawerState({ isOpen: true, mode: 'edit', driver }),
+                              },
+                              {
+                                id: 'account',
+                                label: 'Manage user account',
+                                icon: <UserCheck size={13} className="text-blue-500" />,
+                                onClick: () =>
+                                  setDrawerState({ isOpen: true, mode: 'edit', driver, initialTab: 0 }),
+                              },
+                              {
+                                id: 'docs',
+                                label: 'Upload compliance docs',
+                                icon: <FileText size={13} className="text-emerald-500" />,
+                                onClick: () =>
+                                  setDrawerState({ isOpen: true, mode: 'edit', driver, initialTab: 6 }),
+                              },
+                              {
+                                id: 'toggle-status',
+                                label: driver.status === 'Active' ? 'Deactivate driver' : 'Activate driver',
+                                icon:
+                                  driver.status === 'Active' ? (
                                     <AlertCircle size={13} className="text-amber-500" />
-                                    <span>Deactivate driver</span>
-                                  </>
-                                ) : (
-                                  <>
+                                  ) : (
                                     <CheckCircle2 size={13} className="text-emerald-500" />
-                                    <span>Activate driver</span>
-                                  </>
-                                )}
-                              </button>
-
-                              <div className="h-px bg-slate-100 my-1" />
-
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setOpenActionRowId(null);
-                                  setDriverToDelete(driver);
-                                }}
-                                className="w-full px-3 py-1.5 text-left text-rose-600 hover:bg-rose-50 flex items-center gap-2 font-medium cursor-pointer"
-                              >
-                                <Trash2 size={13} />
-                                <span>Delete driver</span>
-                              </button>
-                            </div>
-                          )}
+                                  ),
+                                dividerBefore: true,
+                                onClick: () => handleToggleDriverStatus(driver),
+                              },
+                              {
+                                id: 'delete',
+                                label: 'Delete driver',
+                                icon: <Trash2 size={13} />,
+                                tone: 'danger',
+                                dividerBefore: true,
+                                onClick: () => setDriverToDelete(driver),
+                              },
+                            ]}
+                          />
                         </div>
                       </td>
                     </tr>
@@ -1749,40 +1686,66 @@ export const DriversPageContent: React.FC<DriversPageContentProps> = ({ companyC
         onClearHistory={() => setHistoryJobs([])}
       />
 
-      {/* Delete Driver Confirmation Modal */}
-      {driverToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 shrink-0">
-                <Trash2 size={20} />
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-slate-900">Delete Driver?</h4>
-                <p className="text-xs text-slate-600 mt-1">
-                  Are you sure you want to delete driver <strong className="text-slate-900 font-semibold">{driverToDelete.name}</strong> ({driverToDelete.licence || driverToDelete.phone})? All driver allocation records and document files will be removed.
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setDriverToDelete(null)}
-                className="px-3.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmDeleteDriver}
-                className="px-3.5 py-1.5 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg shadow-sm cursor-pointer"
-              >
-                Delete Driver
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Delete Driver Confirmation Modal with Confirmation Chips */}
+      <DeleteConfirmationModal
+        isOpen={Boolean(driverToDelete)}
+        title="Delete Driver?"
+        description={
+          driverToDelete ? (
+            <>
+              Are you sure you want to delete driver{' '}
+              <strong className="text-slate-900 font-semibold">{driverToDelete.name}</strong> (
+              {driverToDelete.licence || driverToDelete.phone})? All driver allocation records
+              and document files will be removed.
+            </>
+          ) : (
+            ''
+          )
+        }
+        confirmLabel="Delete Driver"
+        targetChips={
+          driverToDelete
+            ? [
+                { id: 'name', label: driverToDelete.name, tone: 'orange' },
+                ...(driverToDelete.licence || driverToDelete.phone
+                  ? [
+                      {
+                        id: 'lic',
+                        label: driverToDelete.licence || driverToDelete.phone,
+                        tone: 'blue' as const,
+                      },
+                    ]
+                  : []),
+                ...(driverToDelete.company
+                  ? [{ id: 'org', label: driverToDelete.company, tone: 'purple' as const }]
+                  : []),
+                {
+                  id: 'status',
+                  label: driverToDelete.status,
+                  tone: driverToDelete.status === 'Active' ? 'emerald' : 'slate',
+                },
+              ]
+            : []
+        }
+        confirmationChips={
+          driverToDelete
+            ? [
+                {
+                  id: 'docs',
+                  label: 'Compliance Docs & Allocations Removed',
+                  tone: 'amber',
+                },
+                {
+                  id: 'scope',
+                  label: 'Permanent Driver Record Delete',
+                  tone: 'rose',
+                },
+              ]
+            : []
+        }
+        onCancel={() => setDriverToDelete(null)}
+        onConfirm={handleConfirmDeleteDriver}
+      />
     </div>
   );
 };

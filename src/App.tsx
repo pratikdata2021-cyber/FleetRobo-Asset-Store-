@@ -49,6 +49,7 @@ import { SensorsMasterContent } from './components/SensorsMasterContent';
 import { SimMasterContent } from './components/SimMasterContent';
 import { ModalMappingContent } from './components/ModalMappingContent';
 import { ModelCategoryMasterContent } from './components/ModelCategoryMasterContent';
+import { VehicleModelMasterContent } from './components/VehicleModelMasterContent';
 import { CompanyManagementContent } from './components/CompanyManagementContent';
 import { getEnabledModelsForCompanyName } from './types/companyModelEnablement';
 
@@ -82,9 +83,6 @@ const SidebarItem = ({
       <Icon size={16} className="shrink-0" />
       {!collapsed && <span className="truncate">{label}</span>}
     </div>
-    {!collapsed && (hasArrow || isExpanded !== undefined) && (
-      <ChevronDown size={13} className={`text-slate-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
-    )}
   </button>
 );
 
@@ -341,12 +339,19 @@ export default function App() {
                 {(currentCompany === 'Platform Admin' || currentCompany === 'Binary') && (
                   <SidebarItem 
                     icon={Layers} 
-                    label="Modal Category Master" 
+                    label="Model Category Master" 
                     active={activeAdminMenu === 'modal-category-master'} 
                     collapsed={isCollapsed} 
                     onClick={() => setActiveAdminMenu('modal-category-master')} 
                   />
                 )}
+                <SidebarItem 
+                  icon={Truck} 
+                  label="Vehicle Model Master" 
+                  active={activeAdminMenu === 'vehicle-model-master'} 
+                  collapsed={isCollapsed} 
+                  onClick={() => setActiveAdminMenu('vehicle-model-master')} 
+                />
                 {(hasEnabledDevices || hasEnabledSensors || hasEnabledSims) && (
                   <>
                     <SidebarItem 
@@ -637,7 +642,7 @@ export default function App() {
         </header>
 
         {/* Scrollable Content */}
-        <main className={`flex-1 overflow-y-auto ${((activeCustomerMenu === 'setup-vehicles' || activeCustomerMenu === 'setup-drivers' || activeCustomerMenu === 'setup-fleets' || activeCustomerMenu === 'setup-vendors' || activeCustomerMenu === 'setup-modal-mapping') && viewRole === 'customer') || ((activeAdminMenu === 'devices' || activeAdminMenu === 'sensors' || activeAdminMenu === 'sim-master' || activeAdminMenu === 'modal-mapping' || activeAdminMenu === 'modal-category-master' || activeAdminMenu === 'company-management') && viewRole === 'admin') ? 'p-0' : 'px-6 py-5'}`}>
+        <main className={`flex-1 overflow-y-auto ${((activeCustomerMenu === 'setup-vehicles' || activeCustomerMenu === 'setup-drivers' || activeCustomerMenu === 'setup-fleets' || activeCustomerMenu === 'setup-vendors' || activeCustomerMenu === 'setup-modal-mapping') && viewRole === 'customer') || ((activeAdminMenu === 'devices' || activeAdminMenu === 'sensors' || activeAdminMenu === 'sim-master' || activeAdminMenu === 'modal-mapping' || activeAdminMenu === 'modal-category-master' || activeAdminMenu === 'vehicle-model-master' || activeAdminMenu === 'company-management') && viewRole === 'admin') ? 'p-0' : 'px-6 py-5'}`}>
           {viewRole === 'admin' ? (
             activeAdminMenu === 'company-management' ? (
               <CompanyManagementContent 
@@ -645,6 +650,8 @@ export default function App() {
               />
             ) : activeAdminMenu === 'modal-category-master' ? (
               <ModelCategoryMasterContent />
+            ) : activeAdminMenu === 'vehicle-model-master' ? (
+              <VehicleModelMasterContent currentCompany={currentCompany} />
             ) : activeAdminMenu === 'devices' ? (
               <DevicesMasterContent currentCompany={currentCompany} />
             ) : activeAdminMenu === 'sensors' ? (

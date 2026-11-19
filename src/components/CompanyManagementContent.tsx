@@ -25,6 +25,7 @@ import {
   Settings2,
   SlidersHorizontal,
 } from 'lucide-react';
+import { RowActionMenu } from './common/RowActionMenu';
 import {
   ClientCompany,
   CompanyAuditEntry,
@@ -1702,7 +1703,7 @@ export const CompanyManagementContent: React.FC<CompanyManagementContentProps> =
                     <InfoTip text={COMPANY_MODEL_TOOLTIPS.enabledModels} align="center" />
                   </div>
                 </th>
-                <th className="px-4 py-3 whitespace-nowrap text-right">
+                <th className="px-3 py-3 whitespace-nowrap text-right w-[76px]">
                   <div className="flex items-center justify-end gap-1">
                     <span>Actions</span>
                     <InfoTip text={COMPANY_MODEL_TOOLTIPS.actions} align="right" />
@@ -1799,22 +1800,53 @@ export const CompanyManagementContent: React.FC<CompanyManagementContentProps> =
                     </td>
 
                     {/* Actions */}
-                    <td className="px-4 py-3.5 whitespace-nowrap text-right">
+                    <td className="px-3 py-3.5 whitespace-nowrap text-right">
                       <div
-                        className="flex items-center justify-end gap-2"
+                        className="flex items-center justify-end"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedCompanyId(company.id);
-                            setActiveTab('model-access');
-                          }}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[#FA8A63] hover:bg-[#e57953] text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-                        >
-                          <span>Model Access</span>
-                          <ChevronRight className="w-3.5 h-3.5" />
-                        </button>
+                        <RowActionMenu
+                          ariaLabel={`Actions for ${company.name}`}
+                          items={[
+                            {
+                              id: 'model-access',
+                              label: 'Manage Model Access',
+                              icon: <SlidersHorizontal className="w-3.5 h-3.5 text-[#E56B38]" />,
+                              tone: 'accent',
+                              onClick: () => {
+                                setSelectedCompanyId(company.id);
+                                setActiveTab('model-access');
+                              },
+                            },
+                            {
+                              id: 'overview',
+                              label: 'Company Overview',
+                              icon: <Building2 className="w-3.5 h-3.5 text-slate-400" />,
+                              onClick: () => {
+                                setSelectedCompanyId(company.id);
+                                setActiveTab('overview');
+                              },
+                            },
+                            {
+                              id: 'sites',
+                              label: 'Sites & Depots',
+                              icon: <MapPin className="w-3.5 h-3.5 text-slate-400" />,
+                              onClick: () => {
+                                setSelectedCompanyId(company.id);
+                                setActiveTab('sites');
+                              },
+                            },
+                            {
+                              id: 'activity',
+                              label: 'Activity & Audit Log',
+                              icon: <History className="w-3.5 h-3.5 text-slate-400" />,
+                              onClick: () => {
+                                setSelectedCompanyId(company.id);
+                                setActiveTab('activity');
+                              },
+                            },
+                          ]}
+                        />
                       </div>
                     </td>
                   </tr>

@@ -22,6 +22,7 @@ import {
   computeResourceAllocationStatus,
   formatDateTimeWithTz
 } from '../../types/modalMaster';
+import { RowActionMenu } from '../common/RowActionMenu';
 
 export type DetailsDrawerTab = 'overview' | 'hardware' | 'bindings' | 'resources' | 'activity';
 
@@ -267,8 +268,8 @@ export const ConnectionDetailsDrawer: React.FC<ConnectionDetailsDrawerProps> = (
                     <tr>
                       <th className="px-3 py-2">Category</th>
                       <th className="px-3 py-2">Type / Model</th>
-                      <th className="px-3 py-2">ID Type</th>
-                      <th className="px-3 py-2">Actual Identifier</th>
+                      <th className="px-3 py-2">Identifier Type</th>
+                      <th className="px-3 py-2">Unique Identifier</th>
                       <th className="px-3 py-2">Registry Status</th>
                     </tr>
                   </thead>
@@ -328,7 +329,7 @@ export const ConnectionDetailsDrawer: React.FC<ConnectionDetailsDrawerProps> = (
                       <th className="px-3 py-2">Effective Start</th>
                       <th className="px-3 py-2">Effective End</th>
                       <th className="px-3 py-2">Status</th>
-                      {canEdit && <th className="px-3 py-2 text-right">Action</th>}
+                      {canEdit && <th className="px-3 py-2 text-right w-[68px]">Actions</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -369,13 +370,21 @@ export const ConnectionDetailsDrawer: React.FC<ConnectionDetailsDrawerProps> = (
                             {canEdit && (
                               <td className="px-3 py-2.5 text-right">
                                 {st.status !== 'Ended' && st.status !== 'Canceled' ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => onEndBinding(b)}
-                                    className="inline-flex items-center gap-1 px-2 py-1 rounded border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 text-[10px] font-semibold cursor-pointer"
-                                  >
-                                    <StopCircle className="w-3 h-3" /> End
-                                  </button>
+                                  <div className="inline-flex items-center justify-end">
+                                    <RowActionMenu
+                                      ariaLabel={`Actions for binding ${b.id}`}
+                                      menuWidthClass="w-44"
+                                      items={[
+                                        {
+                                          id: 'end-binding',
+                                          label: 'End Binding',
+                                          icon: <StopCircle className="w-3.5 h-3.5" />,
+                                          tone: 'danger',
+                                          onClick: () => onEndBinding(b),
+                                        },
+                                      ]}
+                                    />
+                                  </div>
                                 ) : (
                                   <span className="text-[10px] text-slate-400">Preserved</span>
                                 )}
@@ -400,7 +409,7 @@ export const ConnectionDetailsDrawer: React.FC<ConnectionDetailsDrawerProps> = (
                 <table className="w-full text-left text-[12px]">
                   <thead className="bg-slate-50/70 border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase">
                     <tr>
-                      <th className="px-3 py-2">Alloc ID</th>
+                      <th className="px-3 py-2">Allocation ID</th>
                       <th className="px-3 py-2">Type</th>
                       <th className="px-3 py-2">Identifier</th>
                       <th className="px-3 py-2">Effective Start</th>

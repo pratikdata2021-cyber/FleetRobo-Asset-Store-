@@ -42,6 +42,7 @@ interface DriverDrawerProps {
   onSwitchToEdit?: () => void;
   existingDrivers: Driver[];
   companyContext?: string;
+  zIndexClass?: string;
 }
 
 type DriverSectionTab = 
@@ -77,7 +78,8 @@ export const DriverDrawer: React.FC<DriverDrawerProps> = ({
   onSaveDriver,
   onSwitchToEdit,
   existingDrivers,
-  companyContext
+  companyContext,
+  zIndexClass = 'z-50'
 }) => {
   const isReadOnly = mode === 'view';
 
@@ -155,7 +157,7 @@ export const DriverDrawer: React.FC<DriverDrawerProps> = ({
 
   // Initialize or populate form
   useEffect(() => {
-    if (initialDriver) {
+    if (initialDriver && mode !== 'create') {
       setFormData({ 
         ...initialDriver,
         company: initialDriver.company || companyContext || 'Adani Port',
@@ -172,6 +174,8 @@ export const DriverDrawer: React.FC<DriverDrawerProps> = ({
         setAccountMode('new');
       }
     } else {
+      const prefillPhone = initialDriver?.phone || '';
+      const prefillName = initialDriver?.name || '';
       setFormData({
         status: 'Active',
         company: companyContext || 'Adani Port',
@@ -185,11 +189,13 @@ export const DriverDrawer: React.FC<DriverDrawerProps> = ({
         accountCountry: 'India',
         accountRole: 'Driver',
         licenceType: 'HMV',
-        first: '',
+        first: prefillName.split(' ')[0] || '',
         middle: '',
-        last: '',
-        name: '',
-        phone: '',
+        last: prefillName.split(' ').slice(1).join(' ') || '',
+        name: prefillName,
+        phone: prefillPhone,
+        accountPhone: prefillPhone,
+        accountName: prefillName,
         dob: '1990-01-01',
         licenceFrom: '2016-01-01',
         licenceTo: '2030-01-01'
@@ -570,7 +576,7 @@ export const DriverDrawer: React.FC<DriverDrawerProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden flex justify-end font-sans">
+    <div className={`fixed inset-0 ${zIndexClass} overflow-hidden flex justify-end font-sans`}>
       {/* Backdrop */}
       <div 
         onClick={handleCloseAttempt} 

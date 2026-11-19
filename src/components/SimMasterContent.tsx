@@ -22,6 +22,13 @@ import {
   Building2
 } from 'lucide-react';
 import {
+  DirectBulkUploadView,
+  formatUploadFileSize,
+  useDirectUploadState
+} from './common/DirectBulkUploadView';
+import { RowActionMenu } from './common/RowActionMenu';
+import { DeleteConfirmationModal } from './common/DeleteConfirmationModal';
+import {
   SimRecord,
   SimLifecycleStatus,
   SIM_COLUMNS,
@@ -218,15 +225,15 @@ export const SimMasterContent: React.FC<SimMasterContentProps> = ({ currentCompa
 
   // Bulk operation state
   const [bulkAction, setBulkAction] = useState<
-    'Update owner' | 'Update lifecycle' | 'Update plan' | 'Retire eligible'
+    'Update owner' | 'Update lifecycle' | 'Update plan' | 'Retire eligible' | 'Delete eligible'
   >('Update owner');
   const [bulkTargetOwner, setBulkTargetOwner] = useState(MODAL_OWNERS[0]);
   const [bulkTargetLifecycle, setBulkTargetLifecycle] = useState<SimLifecycleStatus>('Active');
   const [bulkTargetPlan, setBulkTargetPlan] = useState<SimRecord['plan']>('IoT Business 10GB');
+  const [pendingBulkDelete, setPendingBulkDelete] = useState(false);
 
-  // Import state
-  const [importText, setImportText] = useState('');
-  const [importFormat, setImportFormat] = useState<'csv' | 'json'>('csv');
+  // Direct upload state
+  const simUpload = useDirectUploadState(activeDrawer === 'import');
 
   useEffect(() => {
     saveSavedModalViews(savedViews);
@@ -690,7 +697,7 @@ export const SimMasterContent: React.FC<SimMasterContentProps> = ({ currentCompa
     }[] = [];
 
     selectedSimRecords.forEach((sim) => {
-      if (bulkAction === 'Retire eligible') {
+      if (bulkAction === 'Retire eligible' || bulkAction === 'Delete eligible') {
         const hasOpenAssignment = activeAssignmentBySimId.has(sim.id);
         if (hasOpenAssignment) {
           skipped.push({
@@ -708,8 +715,36 @@ export const SimMasterContent: React.FC<SimMasterContentProps> = ({ currentCompa
     return { eligible, skipped };
   }, [selectedSimRecords, bulkAction, activeAssignmentBySimId]);
 
+  const executeBulkDeleteSims = (reason?: string) => {
+    const eligibleIds = new Set(bulkEligibility.eligible.map((s) => s.id));
+    if (eligibleIds.size === 0) return;
+
+    setStore((prev) => ({
+      ...prev,
+      sims: prev.sims.filter((s) => !eligibleIds.has(s.id))
+    }));
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      eligibleIds.forEach((id) => next.delete(id));
+      return next;
+    });
+    if (inspectedSim && eligibleIds.has(inspectedSim.id)) {
+      setInspectedSim(null);
+    }
+    showToast(
+      `Deleted ${eligibleIds.size} SIM card(s)${bulkEligibility.skipped.length > 0 ? `, ${bulkEligibility.skipped.length} skipped` : ''}${reason ? ` · ${reason}` : ''}`
+    );
+    setPendingBulkDelete(false);
+    setActiveDrawer(null);
+  };
+
   const handleApplyBulk = () => {
     if (selectedSimRecords.length === 0) return;
+    if (bulkAction === 'Delete eligible') {
+      if (bulkEligibility.eligible.length === 0) return;
+      setPendingBulkDelete(true);
+      return;
+    }
     const eligibleIds = new Set(bulkEligibility.eligible.map((s) => s.id));
 
     setStore((prev) => ({
@@ -738,20 +773,19 @@ export const SimMasterContent: React.FC<SimMasterContentProps> = ({ currentCompa
     setActiveDrawer(null);
   };
 
-  // Import preview & execution
-  const importPreview = useMemo(() => {
-    const raw = importText.trim();
-    if (!raw)
-      return {
-        valid: [] as Partial<SimRecord>[],
-        invalid: [] as { line: number; reason: string }[]
-      };
+  // Direct CSV/JSON upload execution
+  const processSimsUpload = (fmt: 'csv' | 'json', rawText: string, fileName: string, fileSize?: number) => {
+    const raw = rawText.trim();
+    if (!raw) {
+      simUpload.fail('Uploaded file is empty.');
+      return;
+    }
 
     const valid: Partial<SimRecord>[] = [];
     const invalid: { line: number; reason: string }[] = [];
     const seenIccids = new Set(store.sims.map((s) => s.iccid));
 
-    if (importFormat === 'json') {
+    if (fmt === 'json') {
       try {
         const parsed = JSON.parse(raw);
         const arr = Array.isArray(parsed) ? parsed : [parsed];
@@ -788,14 +822,15 @@ export const SimMasterContent: React.FC<SimMasterContentProps> = ({ currentCompa
           });
         });
       } catch {
-        invalid.push({ line: 1, reason: 'Invalid JSON syntax' });
+        simUpload.fail('Invalid JSON syntax.');
+        return;
       }
     } else {
       const lines = raw.split(/\r?\n/).filter((l) => l.trim().length > 0);
       lines.forEach((line, idx) => {
         const cols = parseCsvLine(line);
         if (idx === 0 && cols[0]?.toLowerCase().includes('iccid')) {
-          return; // header row
+          return;
         }
         const [iccid, msisdn, operator, plan, formFactor, owner, location, status] = cols;
         if (!iccid || !/^\d{18,22}$/.test(iccid)) {
@@ -816,50 +851,62 @@ export const SimMasterContent: React.FC<SimMasterContentProps> = ({ currentCompa
         valid.push({
           iccid,
           msisdn: msisdn || '',
-          operator: (SIM_OPERATORS.includes(operator as any) ? operator : 'Airtel') as any,
-          plan: (SIM_PLANS.includes(plan as any) ? plan : 'IoT Business 10GB') as any,
-          formFactor: (SIM_FORM_FACTORS.includes(formFactor as any)
+          operator: (SIM_OPERATORS.includes(operator as SimRecord['operator']) ? operator : 'Airtel') as SimRecord['operator'],
+          plan: (SIM_PLANS.includes(plan as SimRecord['plan']) ? plan : 'IoT Business 10GB') as SimRecord['plan'],
+          formFactor: (SIM_FORM_FACTORS.includes(formFactor as SimRecord['formFactor'])
             ? formFactor
-            : 'Nano (4FF)') as any,
+            : 'Nano (4FF)') as SimRecord['formFactor'],
           owner: owner || 'Adani Port',
           location: location || 'Mundra CT2',
-          status: (SIM_LIFECYCLE_OPTIONS.includes(status as any)
+          status: (SIM_LIFECYCLE_OPTIONS.includes(status as SimLifecycleStatus)
             ? status
             : 'Inventory') as SimLifecycleStatus
         });
       });
     }
 
-    return { valid, invalid };
-  }, [importText, importFormat, store.sims]);
+    if (valid.length === 0) {
+      simUpload.fail(
+        invalid[0]?.reason || 'No valid new SIM rows found (invalid ICCID or duplicates).'
+      );
+      return;
+    }
 
-  const handleCommitImport = () => {
-    if (importPreview.valid.length === 0) return;
-    const created: SimRecord[] = importPreview.valid.map((v, i) => ({
-      id: `SIM-${1000 + store.sims.length + i}`,
-      iccid: v.iccid!,
-      msisdn: v.msisdn || '',
-      operator: v.operator || 'Airtel',
-      plan: v.plan || 'IoT Business 10GB',
-      formFactor: v.formFactor || 'Nano (4FF)',
-      network: '4G LTE',
-      owner: v.owner || 'Adani Port',
-      location: v.location || 'Mundra CT2',
-      status: v.status || 'Inventory',
-      activationDate: v.activationDate || '',
-      renewalDate: v.renewalDate || '',
-      notes: 'Imported via bulk CSV/JSON'
-    }));
+    simUpload.startUploading(fileName, formatUploadFileSize(fileSize), () => {
+      const created: SimRecord[] = valid.map((v, i) => ({
+        id: `SIM-${1000 + store.sims.length + i}`,
+        iccid: v.iccid!,
+        msisdn: v.msisdn || '',
+        operator: v.operator || 'Airtel',
+        plan: v.plan || 'IoT Business 10GB',
+        formFactor: v.formFactor || 'Nano (4FF)',
+        network: '4G LTE',
+        owner: v.owner || 'Adani Port',
+        location: v.location || 'Mundra CT2',
+        status: v.status || 'Inventory',
+        activationDate: v.activationDate || '',
+        renewalDate: v.renewalDate || '',
+        notes: 'Imported via bulk CSV/JSON'
+      }));
 
-    setStore((prev) => ({
-      ...prev,
-      sims: [...created, ...prev.sims]
-    }));
-    setSortKey('');
-    setCurrentPage(1);
-    showToast(`Imported ${created.length} SIM(s) (${importPreview.invalid.length} skipped).`);
-    setImportText('');
-    setActiveDrawer(null);
+      setStore((prev) => ({
+        ...prev,
+        sims: [...created, ...prev.sims]
+      }));
+      setSortKey('');
+      setCurrentPage(1);
+      showToast(`Imported ${created.length} SIM(s) (${invalid.length} skipped).`);
+      return {
+        headline: 'SIM cards uploaded successfully',
+        description: `${created.length} SIM record${created.length === 1 ? '' : 's'} imported from ${fileName}.${
+          invalid.length > 0 ? ` ${invalid.length} duplicate or invalid row${invalid.length === 1 ? '' : 's'} skipped.` : ''
+        }`,
+        stats: [
+          { label: 'Uploaded', value: created.length, tone: 'emerald' },
+          { label: 'Skipped', value: invalid.length, tone: invalid.length > 0 ? 'amber' : 'slate' }
+        ]
+      };
+    });
   };
 
   // Lifecycle pill styling
@@ -1221,7 +1268,7 @@ export const SimMasterContent: React.FC<SimMasterContentProps> = ({ currentCompa
                         </th>
                       );
                     })}
-                    <th className="sticky right-0 bg-[#f8fafc] px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-[#5c6b7a] text-right border-l border-[#e3e8ee] w-[110px]">
+                    <th className="sticky right-0 bg-[#f8fafc] px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-[#5c6b7a] text-right border-l border-[#e3e8ee] w-[76px]">
                       Actions
                     </th>
                   </tr>
@@ -1348,31 +1395,32 @@ export const SimMasterContent: React.FC<SimMasterContentProps> = ({ currentCompa
                             );
                           })}
                           <td className="sticky right-0 bg-white px-3 py-2.5 text-right border-l border-[#edf1f5] whitespace-nowrap">
-                            <div className="inline-flex items-center justify-end gap-1">
-                              <button
-                                type="button"
-                                onClick={() => openInspector(row)}
-                                title="View details"
-                                className="p-1.5 rounded hover:bg-[#f1f5f9] text-[#5c6b7a] hover:text-[#17212b] cursor-pointer"
-                              >
-                                <Eye size={14} />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleOpenEdit(row)}
-                                title="Edit"
-                                className="p-1.5 rounded hover:bg-[#f1f5f9] text-[#5c6b7a] hover:text-[#FA8A63] cursor-pointer"
-                              >
-                                <Edit2 size={14} />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setSimToDelete(row)}
-                                title="Delete SIM"
-                                className="p-1.5 rounded hover:bg-rose-50 text-[#5c6b7a] hover:text-rose-600 cursor-pointer"
-                              >
-                                <Trash2 size={14} />
-                              </button>
+                            <div className="inline-flex items-center justify-end">
+                              <RowActionMenu
+                                ariaLabel={`Actions for ${row.iccid}`}
+                                items={[
+                                  {
+                                    id: 'view',
+                                    label: 'View details',
+                                    icon: <Eye size={14} className="text-slate-400" />,
+                                    onClick: () => openInspector(row),
+                                  },
+                                  {
+                                    id: 'edit',
+                                    label: 'Edit SIM',
+                                    icon: <Edit2 size={14} className="text-slate-400" />,
+                                    onClick: () => handleOpenEdit(row),
+                                  },
+                                  {
+                                    id: 'delete',
+                                    label: 'Delete SIM',
+                                    icon: <Trash2 size={14} />,
+                                    tone: 'danger',
+                                    dividerBefore: true,
+                                    onClick: () => setSimToDelete(row),
+                                  },
+                                ]}
+                              />
                             </div>
                           </td>
                         </tr>
@@ -2247,6 +2295,7 @@ export const SimMasterContent: React.FC<SimMasterContentProps> = ({ currentCompa
                         <option value="Update lifecycle">Update lifecycle</option>
                         <option value="Update plan">Update plan</option>
                         <option value="Retire eligible">Retire eligible</option>
+                        <option value="Delete eligible">Delete eligible</option>
                       </select>
                     </div>
 
@@ -2309,17 +2358,32 @@ export const SimMasterContent: React.FC<SimMasterContentProps> = ({ currentCompa
                       </div>
                     )}
 
-                    {bulkAction === 'Retire eligible' && (
+                    {(bulkAction === 'Retire eligible' || bulkAction === 'Delete eligible') && (
                       <div className="p-3.5 rounded-lg border border-[#fed7aa] bg-[#fff7ed] text-[12px] text-[#b45309]">
-                        SIMs with an open assignment (`end` is blank) in Modal Mapping are protected
-                        and automatically skipped during bulk retirement.
+                        SIMs with an open assignment (end is blank) in Modal Mapping are protected
+                        and automatically skipped during bulk{' '}
+                        {bulkAction === 'Delete eligible' ? 'deletion' : 'retirement'}.
                       </div>
                     )}
+
+                    <div className="flex flex-wrap gap-1.5">
+                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border border-slate-200 bg-slate-100 text-slate-700">
+                        {selectedSimRecords.length} Selected
+                      </span>
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold border border-emerald-200 bg-emerald-50 text-emerald-700">
+                        <CheckCircle2 size={12} /> {bulkEligibility.eligible.length} Eligible
+                      </span>
+                      {bulkEligibility.skipped.length > 0 && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold border border-amber-200 bg-amber-50 text-amber-800">
+                          <AlertTriangle size={12} /> {bulkEligibility.skipped.length} Assigned / Skipped
+                        </span>
+                      )}
+                    </div>
 
                     <div className="grid grid-cols-2 gap-3">
                       <div className="p-3 rounded-lg border border-[#b9ebd0] bg-[#eaf8f0]">
                         <div className="text-[11px] text-[#0f7b4b] font-semibold">
-                          Eligible to update
+                          {bulkAction === 'Delete eligible' ? 'Eligible to delete' : 'Eligible to update'}
                         </div>
                         <div className="text-[20px] font-bold text-[#0f7b4b]">
                           {bulkEligibility.eligible.length}
@@ -2366,22 +2430,28 @@ export const SimMasterContent: React.FC<SimMasterContentProps> = ({ currentCompa
                 <button
                   disabled={bulkEligibility.eligible.length === 0}
                   onClick={handleApplyBulk}
-                  className="px-4 py-2 rounded-[7px] bg-[#e56b38] hover:bg-[#d15b2a] disabled:opacity-40 text-white text-[12px] font-semibold cursor-pointer"
+                  className={`px-4 py-2 rounded-[7px] disabled:opacity-40 text-white text-[12px] font-semibold cursor-pointer ${
+                    bulkAction === 'Delete eligible'
+                      ? 'bg-rose-600 hover:bg-rose-700'
+                      : 'bg-[#e56b38] hover:bg-[#d15b2a]'
+                  }`}
                 >
-                  Apply to {bulkEligibility.eligible.length} eligible SIM(s)
+                  {bulkAction === 'Delete eligible'
+                    ? `Delete ${bulkEligibility.eligible.length} eligible SIM(s)`
+                    : `Apply to ${bulkEligibility.eligible.length} eligible SIM(s)`}
                 </button>
               </div>
             </div>
           )}
 
-          {/* 7. IMPORT DRAWER */}
+          {/* 7. DIRECT IMPORT DRAWER */}
           {activeDrawer === 'import' && (
             <div className="w-[620px] max-w-[96vw] h-full bg-white shadow-2xl border-l border-[#e3e8ee] flex flex-col z-50">
               <div className="px-5 py-4 border-b border-[#e3e8ee] flex items-center justify-between">
                 <div>
                   <h2 className="text-[16px] font-bold text-[#17212b]">Import SIM Cards</h2>
                   <p className="text-[12px] text-[#5c6b7a] mt-0.5">
-                    Import SIM inventory via CSV or JSON. Every ICCID must be 18–22 ASCII digits and unique.
+                    Upload a CSV or JSON file to register SIM cards directly into inventory.
                   </p>
                 </div>
                 <button
@@ -2392,180 +2462,176 @@ export const SimMasterContent: React.FC<SimMasterContentProps> = ({ currentCompa
                 </button>
               </div>
 
-              <div className="p-5 flex-1 overflow-y-auto space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setImportFormat('csv')}
-                      className={`px-3 py-1.5 rounded-[7px] text-[12px] font-semibold border cursor-pointer ${
-                        importFormat === 'csv'
-                          ? 'border-[#f1b79d] bg-[#fff4ee] text-[#9e431c]'
-                          : 'border-[#d6dfe8] bg-white text-[#5c6b7a]'
-                      }`}
-                    >
-                      CSV Format
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setImportFormat('json')}
-                      className={`px-3 py-1.5 rounded-[7px] text-[12px] font-semibold border cursor-pointer ${
-                        importFormat === 'json'
-                          ? 'border-[#f1b79d] bg-[#fff4ee] text-[#9e431c]'
-                          : 'border-[#d6dfe8] bg-white text-[#5c6b7a]'
-                      }`}
-                    >
-                      JSON Format
-                    </button>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const suffix = Math.floor(10000 + Math.random() * 89999);
-                      if (importFormat === 'csv') {
-                        setImportText(
-                          `ICCID,Mobile number,Operator,Plan / package,Form factor,Owner / customer,Inventory location,Lifecycle\n` +
-                            `899186104312999${suffix},+91 98100${suffix},Airtel,IoT Business 10GB,Nano (4FF),Adani Port,Mundra CT2,Inventory`
-                        );
-                      } else {
-                        setImportText(
-                          JSON.stringify(
-                            [
-                              {
-                                iccid: `899186104312888${suffix}`,
-                                msisdn: `+91 98200${suffix}`,
-                                operator: 'Jio',
-                                plan: 'Enterprise M2M 2GB',
-                                formFactor: 'eSIM',
-                                owner: 'Adani Logistics',
-                                location: 'Hazira Terminal',
-                                status: 'Inventory'
-                              }
-                            ],
-                            null,
-                            2
-                          )
-                        );
-                      }
-                    }}
-                    className="text-[12px] font-semibold text-[#9e431c] hover:underline cursor-pointer"
-                  >
-                    Load sample {importFormat.toUpperCase()}
-                  </button>
-                </div>
-
-                <div>
-                  <label className="block text-[12px] font-semibold text-[#17212b] mb-1.5">
-                    Upload `.csv` or `.json` file or paste rows below
-                  </label>
-                  <input
-                    type="file"
-                    accept=".csv,.json,text/csv,application/json"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-                      if (file.name.endsWith('.json')) setImportFormat('json');
-                      else setImportFormat('csv');
-                      const reader = new FileReader();
-                      reader.onload = (ev) => {
-                        setImportText(String(ev.target?.result || ''));
-                      };
-                      reader.readAsText(file);
-                    }}
-                    className="block w-full text-[12px] text-[#5c6b7a] file:mr-3 file:py-1.5 file:px-3 file:rounded-[7px] file:border file:border-[#d6dfe8] file:bg-[#f8fafc] file:text-[12px] file:font-semibold file:text-[#17212b] hover:file:bg-slate-100 mb-2.5"
-                  />
-                  <textarea
-                    rows={6}
-                    value={importText}
-                    onChange={(e) => setImportText(e.target.value)}
-                    placeholder="Paste CSV lines or JSON array here..."
-                    className="w-full p-3 rounded-[7px] border border-[#d6dfe8] font-mono text-[11.5px] focus:outline-none focus:border-[#e56b38]"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="p-3 rounded-lg border border-[#b9ebd0] bg-[#eaf8f0]">
-                    <div className="text-[11px] font-semibold text-[#0f7b4b]">Valid new SIMs</div>
-                    <div className="text-[18px] font-bold text-[#0f7b4b]">
-                      {importPreview.valid.length}
-                    </div>
-                  </div>
-                  <div className="p-3 rounded-lg border border-[#fecaca] bg-[#fef2f2]">
-                    <div className="text-[11px] font-semibold text-[#dc2626]">
-                      Invalid / Duplicate rows
-                    </div>
-                    <div className="text-[18px] font-bold text-[#dc2626]">
-                      {importPreview.invalid.length}
-                    </div>
-                  </div>
-                </div>
-
-                {importPreview.invalid.length > 0 && (
-                  <div className="p-3 rounded-lg border border-[#fecaca] bg-[#fef2f2] space-y-1 text-[11px] text-[#dc2626]">
-                    {importPreview.invalid.map((err, i) => (
-                      <div key={i}>
-                        Line {err.line}: {err.reason}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="px-5 py-3.5 border-t border-[#e3e8ee] bg-[#f8fafc] flex items-center justify-end gap-2">
-                <button
-                  onClick={() => setActiveDrawer(null)}
-                  className="px-4 py-2 rounded-[7px] border border-[#d6dfe8] bg-white text-[12px] font-semibold text-[#5c6b7a] cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  disabled={importPreview.valid.length === 0}
-                  onClick={handleCommitImport}
-                  className="px-4 py-2 rounded-[7px] bg-[#e56b38] hover:bg-[#d15b2a] disabled:opacity-40 text-white text-[12px] font-semibold cursor-pointer"
-                >
-                  Import {importPreview.valid.length} valid SIM(s)
-                </button>
+              <div className="p-6 flex-1 overflow-y-auto">
+                <DirectBulkUploadView
+                  status={simUpload.status}
+                  progress={simUpload.progress}
+                  fileLabel={simUpload.fileLabel}
+                  fileMeta={simUpload.fileMeta}
+                  errorMessage={simUpload.errorMessage}
+                  doneSummary={simUpload.doneSummary}
+                  accept=".csv,.json,text/csv,application/json"
+                  dropTitle="Choose CSV / JSON or drag & drop"
+                  dropSubtitle="Every ICCID must be 18–22 ASCII digits and unique."
+                  chooseButtonLabel="Choose file"
+                  downloadLabel="Download template"
+                  sampleLabel="Use sample CSV"
+                  templateTitle="Need a starting format?"
+                  templateSubtitle="Download CSV template or upload a sample SIM record."
+                  doneButtonLabel="Done"
+                  onFileSelected={(file) => {
+                    const lower = file.name.toLowerCase();
+                    if (!lower.endsWith('.csv') && !lower.endsWith('.json')) {
+                      simUpload.fail('Please upload a .csv or .json file.');
+                      return;
+                    }
+                    const fmt: 'csv' | 'json' = lower.endsWith('.json') ? 'json' : 'csv';
+                    const reader = new FileReader();
+                    reader.onload = (ev) =>
+                      processSimsUpload(fmt, String(ev.target?.result || ''), file.name, file.size);
+                    reader.onerror = () => simUpload.fail('Unable to read the selected file.');
+                    reader.readAsText(file);
+                  }}
+                  onDownloadTemplate={() => {
+                    const csv =
+                      'ICCID,Mobile number,Operator,Plan / package,Form factor,Owner / customer,Inventory location,Lifecycle\n' +
+                      '89918610431299912345,+91 9810012345,Airtel,IoT Business 10GB,Nano (4FF),Adani Port,Mundra CT2,Inventory';
+                    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'fleetrobo_sims_template.csv';
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                  onUseSample={() => {
+                    const suffix = Math.floor(10000 + Math.random() * 89999);
+                    const sampleCsv =
+                      `ICCID,Mobile number,Operator,Plan / package,Form factor,Owner / customer,Inventory location,Lifecycle\n` +
+                      `899186104312999${suffix},+91 98100${suffix},Airtel,IoT Business 10GB,Nano (4FF),Adani Port,Mundra CT2,Inventory`;
+                    processSimsUpload('csv', sampleCsv, `sample_sims_${suffix}.csv`, sampleCsv.length);
+                  }}
+                  onReset={simUpload.reset}
+                  onDone={() => setActiveDrawer(null)}
+                />
               </div>
             </div>
           )}
         </div>
       )}
 
-      {/* Delete SIM Confirmation Modal */}
-      {simToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 shrink-0">
-                <Trash2 size={20} />
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-slate-900">Delete SIM Card?</h4>
-                <p className="text-xs text-slate-600 mt-1">
-                  Are you sure you want to delete SIM <strong className="text-slate-900 font-semibold">{simToDelete.iccid}</strong> ({simToDelete.operator} · {simToDelete.plan})? This SIM record will be permanently removed.
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setSimToDelete(null)}
-                className="px-3.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmDeleteSim}
-                className="px-3.5 py-1.5 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg shadow-sm cursor-pointer"
-              >
-                Delete SIM
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Delete SIM Confirmation Modal with Confirmation Chips */}
+      {(() => {
+        if (!simToDelete) return null;
+        const activeAssign = activeAssignmentBySimId.get(simToDelete.id);
+        return (
+          <DeleteConfirmationModal
+            isOpen={Boolean(simToDelete)}
+            title="Delete SIM Card?"
+            description={
+              <>
+                Are you sure you want to delete SIM{' '}
+                <strong className="text-slate-900 font-semibold font-mono">{simToDelete.iccid}</strong>{' '}
+                ({simToDelete.operator} · {simToDelete.plan})? This SIM record will be permanently
+                removed.
+              </>
+            }
+            confirmLabel="Delete SIM"
+            targetChips={[
+              { id: 'iccid', label: simToDelete.iccid, tone: 'orange' },
+              {
+                id: 'operator',
+                label: simToDelete.operator,
+                sublabel: simToDelete.plan,
+                tone: 'blue',
+              },
+              { id: 'org', label: simToDelete.owner, tone: 'purple' },
+              {
+                id: 'status',
+                label: simToDelete.status,
+                tone: simToDelete.status === 'Active' ? 'emerald' : 'slate',
+              },
+            ]}
+            confirmationChips={[
+              activeAssign
+                ? {
+                    id: 'assign-check',
+                    label: `Assigned in ${activeAssign.connectionId}`,
+                    tone: 'amber',
+                  }
+                : {
+                    id: 'assign-check',
+                    label: 'Safe to Delete · Unassigned',
+                    tone: 'emerald',
+                  },
+              {
+                id: 'scope',
+                label: 'Permanent SIM Removal',
+                tone: 'rose',
+              },
+            ]}
+            warningNote={
+              activeAssign ? (
+                <>
+                  This SIM currently has an open binding in{' '}
+                  <strong>{activeAssign.connectionId}</strong> ({activeAssign.hardwareName}). Removing
+                  it will drop it from SIM Master inventory.
+                </>
+              ) : undefined
+            }
+            onCancel={() => setSimToDelete(null)}
+            onConfirm={handleConfirmDeleteSim}
+          />
+        );
+      })()}
+
+      {/* Bulk Delete SIMs Confirmation Modal with Confirmation Chips */}
+      <DeleteConfirmationModal
+        isOpen={pendingBulkDelete}
+        title={`Delete ${bulkEligibility.eligible.length} Eligible SIM(s)?`}
+        description="Permanently remove eligible unassigned SIM cards from inventory. SIMs with open Modal Mapping bindings are automatically skipped."
+        confirmLabel={`Confirm Delete (${bulkEligibility.eligible.length})`}
+        targetChips={[
+          ...bulkEligibility.eligible.slice(0, 5).map((s) => ({
+            id: s.id,
+            label: s.iccid,
+            sublabel: s.operator,
+            tone: 'orange' as const,
+          })),
+          ...(bulkEligibility.eligible.length > 5
+            ? [
+                {
+                  id: 'more-sims',
+                  label: `+${bulkEligibility.eligible.length - 5} more`,
+                  tone: 'slate' as const,
+                },
+              ]
+            : []),
+        ]}
+        confirmationChips={[
+          {
+            id: 'selected',
+            label: `${selectedSimRecords.length} Selected`,
+            tone: 'slate',
+          },
+          {
+            id: 'eligible',
+            label: `${bulkEligibility.eligible.length} Eligible to Delete`,
+            tone: 'emerald',
+          },
+          ...(bulkEligibility.skipped.length > 0
+            ? [
+                {
+                  id: 'skipped',
+                  label: `${bulkEligibility.skipped.length} Skipped (Assigned)`,
+                  tone: 'amber' as const,
+                },
+              ]
+            : []),
+        ]}
+        onCancel={() => setPendingBulkDelete(false)}
+        onConfirm={executeBulkDeleteSims}
+      />
     </div>
   );
 };

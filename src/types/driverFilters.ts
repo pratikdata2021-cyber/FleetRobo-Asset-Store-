@@ -269,11 +269,11 @@ export const DRIVER_COLUMNS_CATALOGUE: DriverColumnDef[] = [
   { key: 'licence', label: 'Licence Number', minWidth: '180px', defaultVisible: true, category: 'Primary' },
   { key: 'phone', label: 'Mobile Number', minWidth: '160px', defaultVisible: true, category: 'Primary' },
   { key: 'status', label: 'Driver Status', minWidth: '145px', defaultVisible: true, category: 'Primary' },
-  { key: 'reg', label: 'Registration Number', minWidth: '190px', defaultVisible: true, category: 'Primary' },
+  { key: 'reg', label: 'Assigned Vehicle Reg. No.', minWidth: '195px', defaultVisible: true, category: 'Primary' },
   { key: 'licenceTo', label: 'Licence Valid To', minWidth: '165px', defaultVisible: true, category: 'Primary' },
 
   // User Accounts
-  { key: 'accountStatus', label: 'Account Mapping', minWidth: '165px', defaultVisible: true, category: 'User Accounts' },
+  { key: 'accountStatus', label: 'Account Linkage', minWidth: '165px', defaultVisible: true, category: 'User Accounts' },
   { key: 'accountName', label: 'Account Name', minWidth: '185px', defaultVisible: false, category: 'User Accounts' },
   { key: 'accountEmail', label: 'Email', minWidth: '245px', defaultVisible: true, category: 'User Accounts' },
   { key: 'accountPhone', label: 'Account Phone', minWidth: '165px', defaultVisible: false, category: 'User Accounts' },
@@ -284,7 +284,7 @@ export const DRIVER_COLUMNS_CATALOGUE: DriverColumnDef[] = [
   { key: 'company', label: 'Company', minWidth: '205px', defaultVisible: false, category: 'Ownership' },
   { key: 'transporter', label: 'Transporter', minWidth: '185px', defaultVisible: false, category: 'Ownership' },
   { key: 'joining', label: 'Joining Date', minWidth: '150px', defaultVisible: false, category: 'Ownership' },
-  { key: 'vendor', label: 'Vendor Status', minWidth: '140px', defaultVisible: false, category: 'Ownership' },
+  { key: 'vendor', label: 'Vendor Linked', minWidth: '140px', defaultVisible: false, category: 'Ownership' },
 
   // Licence and Compliance
   { key: 'verification', label: 'Verification Status', minWidth: '170px', defaultVisible: false, category: 'Licence and Compliance' },

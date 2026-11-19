@@ -38,6 +38,12 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import {
+  DirectBulkUploadView,
+  formatUploadFileSize,
+  useDirectUploadState,
+} from './common/DirectBulkUploadView';
+import { DeleteConfirmationModal } from './common/DeleteConfirmationModal';
+import {
   VendorRecord,
   VendorStatusKey,
   VendorTypeKey,
@@ -75,6 +81,7 @@ import {
 } from '../data/vendorsSeed';
 import { Truck } from 'lucide-react';
 import { ColumnCataloguePopover } from './ColumnCataloguePopover';
+import { RowActionMenu } from './common/RowActionMenu';
 
 const STORAGE_KEY = 'fleetrobo-vendor-master-v1';
 
@@ -312,7 +319,6 @@ export const VendorsPageContent: React.FC<VendorsPageContentProps> = ({ companyC
 
   // Popovers & overlays
   const [showSavedViewsPopover, setShowSavedViewsPopover] = useState(false);
-  const [openRowMenuId, setOpenRowMenuId] = useState<string | null>(null);
   const [copiedIdText, setCopiedIdText] = useState<string | null>(null);
 
   // Active drawer & modal states
@@ -465,23 +471,8 @@ export const VendorsPageContent: React.FC<VendorsPageContentProps> = ({ companyC
   // Bulk Delete target IDs (either toolbar selection or single-row delete)
   const [bulkReviewTargetIds, setBulkReviewTargetIds] = useState<string[]>([]);
 
-  // Import CSV Drawer states
-  const [importStep, setImportStep] = useState<0 | 1 | 2 | 3>(0);
-  const [importFileName, setImportFileName] = useState('');
-  const [importHeaders, setImportHeaders] = useState<string[]>([]);
-  const [importRawRows, setImportRawRows] = useState<string[][]>([]);
-  const [importFileError, setImportFileError] = useState('');
-  const [importMapping, setImportMapping] = useState<Record<string, string>>({
-    name: '',
-    phone: '',
-    email: '',
-    website_url: '',
-    country: '',
-    address: '',
-  });
-  const [importSelectedRowIndexes, setImportSelectedRowIndexes] = useState<Set<number>>(new Set());
-  const [importedCountResult, setImportedCountResult] = useState<number>(0);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  // Import CSV Drawer direct upload state
+  const vendorUpload = useDirectUploadState(activeDrawer === 'import');
 
   // Export Modal states
   const [exportScope, setExportScope] = useState<'all' | 'selected'>('all');
@@ -786,10 +777,6 @@ export const VendorsPageContent: React.FC<VendorsPageContentProps> = ({ companyC
         setShowSavedViewsPopover(false);
         return;
       }
-      if (openRowMenuId) {
-        setOpenRowMenuId(null);
-        return;
-      }
       if (activeDrawer === 'vendor') {
         attemptCloseVendorDrawer();
         return;
@@ -903,7 +890,6 @@ export const VendorsPageContent: React.FC<VendorsPageContentProps> = ({ companyC
     mode: 'view' | 'edit',
     initialTab: 'Overview' | 'Personnel' = 'Overview'
   ) => {
-    setOpenRowMenuId(null);
     setVendorFormMode(mode);
     setEditingVendorId(vendor.id);
     setActiveDetailTab(initialTab);
@@ -1761,7 +1747,6 @@ export const VendorsPageContent: React.FC<VendorsPageContentProps> = ({ companyC
     const existingIds = targetIds.filter(id => vendors.some(v => v.id === id));
     if (existingIds.length === 0) return;
     setBulkReviewTargetIds(existingIds);
-    setOpenRowMenuId(null);
     setActiveDrawer('bulk');
   };
 
@@ -1790,29 +1775,21 @@ export const VendorsPageContent: React.FC<VendorsPageContentProps> = ({ companyC
     showToast(`Deleted ${deleteCount} local vendor record${deleteCount === 1 ? '' : 's'}`, 'success');
   };
 
-  // CSV Import 4-step logic
+  // Direct CSV Import logic
   const openImportDrawer = () => {
-    setImportStep(0);
-    setImportFileName('');
-    setImportHeaders([]);
-    setImportRawRows([]);
-    setImportFileError('');
-    setImportMapping({
-      name: '',
-      phone: '',
-      email: '',
-      website_url: '',
-      country: '',
-      address: '',
-    });
-    setImportSelectedRowIndexes(new Set());
-    setImportedCountResult(0);
+    vendorUpload.reset();
     setActiveDrawer('import');
   };
 
-  const autoMatchCsvHeaders = (headers: string[]) => {
+  const processVendorCsvDirect = (fileName: string, text: string, fileSize?: number) => {
+    const parsed = parseCsvContent(text);
+    if (parsed.headers.length === 0 || parsed.rows.length === 0) {
+      vendorUpload.fail('CSV file must include a header row and at least one data row.');
+      return;
+    }
+
     const aliasCatalog: Record<string, string[]> = {
-      name: ['name', 'full_name', 'first_name', 'contact', 'person'],
+      name: ['name', 'vendor_name', 'full_name', 'first_name', 'contact', 'person'],
       phone: [
         'phone',
         'mobile',
@@ -1832,57 +1809,138 @@ export const VendorsPageContent: React.FC<VendorsPageContentProps> = ({ companyC
       address: ['address', 'street_address', 'location'],
     };
 
-    const nextMap: Record<string, string> = {
-      name: '',
-      phone: '',
-      email: '',
-      website_url: '',
-      country: '',
-      address: '',
-    };
-
-    headers.forEach(h => {
+    const colMap: Record<string, string> = {};
+    parsed.headers.forEach(h => {
       const norm = h.trim().toLowerCase().replace(/\s+/g, '_');
       Object.entries(aliasCatalog).forEach(([canonKey, aliases]) => {
-        if (!nextMap[canonKey] && aliases.includes(norm)) {
-          nextMap[canonKey] = h;
+        if (!colMap[canonKey] && aliases.includes(norm)) {
+          colMap[canonKey] = h;
         }
       });
     });
 
-    setImportMapping(nextMap);
-  };
+    const nameHeader = colMap.name || parsed.headers[0];
+    const existingNames = new Set(vendors.map(v => v.name.trim().toLowerCase()));
+    const seenInFile = new Set<string>();
 
-  const loadCsvIntoImporter = (fileName: string, text: string) => {
-    setImportFileError('');
-    const parsed = parseCsvContent(text);
-    if (parsed.headers.length === 0 || parsed.rows.length === 0) {
-      setImportFileError('CSV file must include a header row and at least one data row.');
+    const getCell = (row: string[], colName?: string) => {
+      if (!colName) return '';
+      const idx = parsed.headers.indexOf(colName);
+      return idx >= 0 ? (row[idx] || '').trim() : '';
+    };
+
+    const nowIso = new Date().toISOString();
+    const updatedPlaces = [...places];
+    const newVendors: VendorRecord[] = [];
+    let skippedCount = 0;
+
+    parsed.rows.forEach((row, offset) => {
+      const name = getCell(row, nameHeader);
+      const phone = getCell(row, colMap.phone);
+      const email = getCell(row, colMap.email);
+      const website_url = getCell(row, colMap.website_url);
+      const rawCountry = getCell(row, colMap.country);
+      const address = getCell(row, colMap.address);
+      const lowerName = name.toLowerCase();
+
+      if (
+        !name ||
+        (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) ||
+        seenInFile.has(lowerName) ||
+        existingNames.has(lowerName)
+      ) {
+        skippedCount++;
+        return;
+      }
+
+      seenInFile.add(lowerName);
+      const country: VendorCountry = VENDOR_COUNTRIES.includes(rawCountry as VendorCountry)
+        ? (rawCountry as VendorCountry)
+        : 'India';
+
+      let linkedPlaceId = '';
+      if (address) {
+        const existingPlace = updatedPlaces.find(
+          p => p.address.trim().toLowerCase() === address.trim().toLowerCase()
+        );
+        if (existingPlace) {
+          linkedPlaceId = existingPlace.id;
+        } else {
+          const createdPlace: PlaceRecord = {
+            id: `plc-imp-${Date.now()}-${offset}`,
+            name: address.split(',')[0].trim() || `${name} Place`,
+            address,
+            country,
+          };
+          updatedPlaces.push(createdPlace);
+          linkedPlaceId = createdPlace.id;
+        }
+      }
+
+      const ids = generateNextVendorIds([...vendors, ...newVendors], newVendors.length);
+      newVendors.push({
+        id: `vnd-imp-${Date.now()}-${offset}`,
+        public_id: ids.public_id,
+        internal_id: ids.internal_id,
+        business_id: '',
+        name,
+        type: 'vendor',
+        status: 'active',
+        email,
+        phone,
+        website_url,
+        country,
+        place_id: linkedPlaceId,
+        user_account_id: null,
+        personnel: [],
+        integration: null,
+        company: 'Adani Port',
+        created_at: nowIso,
+        updated_at: nowIso,
+      });
+    });
+
+    if (newVendors.length === 0) {
+      vendorUpload.fail('No valid new vendor rows found (all rows had missing names, invalid email, or duplicate entries).');
       return;
     }
-    setImportFileName(fileName);
-    setImportHeaders(parsed.headers);
-    setImportRawRows(parsed.rows);
-    autoMatchCsvHeaders(parsed.headers);
-    setImportStep(1);
+
+    vendorUpload.startUploading(fileName, formatUploadFileSize(fileSize), () => {
+      setPlaces(updatedPlaces);
+      setVendors(prev => [...newVendors, ...prev]);
+      setSortKey('');
+      setPage(1);
+      showToast(`${newVendors.length} vendor${newVendors.length === 1 ? '' : 's'} imported`, 'success');
+      return {
+        headline: 'Vendors uploaded successfully',
+        description: `Imported ${newVendors.length} vendor record${newVendors.length === 1 ? '' : 's'} from ${fileName}.${
+          skippedCount > 0 ? ` ${skippedCount} duplicate or invalid row${skippedCount === 1 ? '' : 's'} skipped.` : ''
+        }`,
+        stats: [
+          { label: 'Uploaded', value: newVendors.length, tone: 'emerald' },
+          { label: 'Skipped', value: skippedCount, tone: skippedCount > 0 ? 'amber' : 'slate' },
+        ],
+      };
+    });
   };
 
   const handleImportFileSelect = (file: File) => {
     const lower = file.name.toLowerCase();
     if (lower.endsWith('.xls') || lower.endsWith('.xlsx')) {
-      setImportFileError('Select a CSV file. XLS/XLSX import is not enabled.');
+      vendorUpload.fail('Select a CSV file. XLS/XLSX import is not enabled.');
       return;
     }
-    if (!lower.endsWith('.csv')) {
-      setImportFileError('Select a valid .csv file.');
+    if (!lower.endsWith('.csv') && file.type !== 'text/csv') {
+      vendorUpload.fail('Select a valid .csv file.');
       return;
     }
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result === 'string') {
-        loadCsvIntoImporter(file.name, reader.result);
+        processVendorCsvDirect(file.name, reader.result, file.size);
       }
     };
+    reader.onerror = () => vendorUpload.fail('Unable to read the selected CSV file.');
     reader.readAsText(file);
   };
 
@@ -1894,139 +1952,6 @@ export const VendorsPageContent: React.FC<VendorsPageContentProps> = ({ companyC
     a.download = 'FleetRobo_Vendor_Import_Template.csv';
     a.click();
     URL.revokeObjectURL(url);
-  };
-
-  // Validate mapped CSV rows for Step 2 (Validate)
-  const validatedImportRows = useMemo(() => {
-    if (importHeaders.length === 0) return [];
-    const existingNames = new Set(vendors.map(v => v.name.trim().toLowerCase()));
-    const seenInFile = new Set<string>();
-
-    const getCell = (row: string[], colName: string) => {
-      if (!colName) return '';
-      const idx = importHeaders.indexOf(colName);
-      return idx >= 0 ? (row[idx] || '').trim() : '';
-    };
-
-    return importRawRows.map((row, idx) => {
-      const fileRowNum = idx + 2;
-      const name = getCell(row, importMapping.name);
-      const phone = getCell(row, importMapping.phone);
-      const email = getCell(row, importMapping.email);
-      const website_url = getCell(row, importMapping.website_url);
-      const rawCountry = getCell(row, importMapping.country);
-      const address = getCell(row, importMapping.address);
-
-      const country: VendorCountry = VENDOR_COUNTRIES.includes(rawCountry as VendorCountry)
-        ? (rawCountry as VendorCountry)
-        : 'India';
-
-      // Validation priority per Section 10.4:
-      // 1. missing name
-      // 2. invalid optional email
-      // 3. duplicate case-insensitive name within file
-      // 4. duplicate name against existing vendors
-      let error = '';
-      const lowerName = name.toLowerCase();
-      if (!name) {
-        error = 'Missing required Vendor Name';
-      } else if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        error = 'Invalid email format';
-      } else if (seenInFile.has(lowerName)) {
-        error = 'Duplicate vendor name within CSV file';
-      } else if (existingNames.has(lowerName)) {
-        error = 'Duplicate vendor name already exists in Vendor Master';
-      }
-
-      if (name) {
-        seenInFile.add(lowerName);
-      }
-
-      return {
-        idx,
-        fileRowNum,
-        name,
-        phone,
-        email,
-        website_url,
-        country,
-        address,
-        valid: !error,
-        error: error || 'Eligible',
-      };
-    });
-  }, [importHeaders, importRawRows, importMapping, vendors]);
-
-  const proceedToValidateStep = () => {
-    if (!importMapping.name) return;
-    const validIndexes = new Set<number>();
-    validatedImportRows.forEach(r => {
-      if (r.valid) validIndexes.add(r.idx);
-    });
-    setImportSelectedRowIndexes(validIndexes);
-    setImportStep(2);
-  };
-
-  const executeCsvImport = () => {
-    const chosenRows = validatedImportRows.filter(
-      r => r.valid && importSelectedRowIndexes.has(r.idx)
-    );
-    if (chosenRows.length === 0) return;
-
-    const nowIso = new Date().toISOString();
-    const updatedPlaces = [...places];
-    const newVendors: VendorRecord[] = [];
-
-    chosenRows.forEach((r, offset) => {
-      let linkedPlaceId = '';
-      if (r.address) {
-        const existingPlace = updatedPlaces.find(
-          p => p.address.trim().toLowerCase() === r.address.trim().toLowerCase()
-        );
-        if (existingPlace) {
-          linkedPlaceId = existingPlace.id;
-        } else {
-          const createdPlace: PlaceRecord = {
-            id: `plc-imp-${Date.now()}-${offset}`,
-            name: r.address.split(',')[0].trim() || `${r.name} Place`,
-            address: r.address,
-            country: r.country,
-          };
-          updatedPlaces.push(createdPlace);
-          linkedPlaceId = createdPlace.id;
-        }
-      }
-
-      const ids = generateNextVendorIds([...vendors, ...newVendors], offset);
-      newVendors.push({
-        id: `vnd-imp-${Date.now()}-${offset}`,
-        public_id: ids.public_id,
-        internal_id: ids.internal_id,
-        business_id: '',
-        name: r.name,
-        type: 'vendor',
-        status: 'active',
-        email: r.email,
-        phone: r.phone,
-        website_url: r.website_url,
-        country: r.country,
-        place_id: linkedPlaceId,
-        user_account_id: null,
-        personnel: [],
-        integration: null,
-        company: 'Adani Port',
-        created_at: nowIso,
-        updated_at: nowIso,
-      });
-    });
-
-    setPlaces(updatedPlaces);
-    setVendors(prev => [...newVendors, ...prev]);
-    setSortKey('');
-    setPage(1);
-    setImportedCountResult(newVendors.length);
-    setImportStep(3);
-    showToast(`${newVendors.length} vendor${newVendors.length === 1 ? '' : 's'} imported`, 'success');
   };
 
   // Export Vendors (13 exact columns per Section 11)
@@ -2927,89 +2852,45 @@ export const VendorsPageContent: React.FC<VendorsPageContentProps> = ({ companyC
 
                       {/* Row Actions Kebab */}
                       <td className="px-3 py-2.5 text-right sticky right-0 bg-white/95 whitespace-nowrap">
-                        <div className="inline-flex items-center justify-end gap-1 relative">
-                          <button
-                            type="button"
-                            onClick={() => openExistingVendorDrawer(v, 'view', 'Overview')}
-                            title="View details"
-                            className="p-1.5 rounded hover:bg-[#f1f5f9] text-[#5c6b7a] hover:text-[#17212b] cursor-pointer"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => openExistingVendorDrawer(v, 'edit', 'Overview')}
-                            title="Edit vendor"
-                            className="p-1.5 rounded hover:bg-[#f1f5f9] text-[#5c6b7a] hover:text-[#FA8A63] cursor-pointer"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => openBulkDeleteDrawer([v.id])}
-                            title="Delete vendor"
-                            className="p-1.5 rounded hover:bg-rose-50 text-[#5c6b7a] hover:text-rose-600 cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={e => {
-                              e.stopPropagation();
-                              setOpenRowMenuId(curr => (curr === v.id ? null : v.id));
-                            }}
-                            aria-label={`Actions for ${v.name}`}
-                            title="More actions"
-                            className="p-1.5 rounded hover:bg-[#f1f5f9] text-[#5c6b7a] hover:text-[#17212b] cursor-pointer"
-                          >
-                            <MoreHorizontal className="w-3.5 h-3.5" />
-                          </button>
-
-                          {openRowMenuId === v.id && (
-                            <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-xl shadow-xl border border-slate-200 z-[95] py-1 text-left">
-                              <button
-                                type="button"
-                                onClick={() => openExistingVendorDrawer(v, 'view', 'Overview')}
-                                className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
-                              >
-                                <Eye className="w-3.5 h-3.5 text-slate-400" /> View details
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => openExistingVendorDrawer(v, 'edit', 'Overview')}
-                                className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
-                              >
-                                <Edit2 className="w-3.5 h-3.5 text-slate-400" /> Edit vendor
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => openExistingVendorDrawer(v, 'view', 'Personnel')}
-                                className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center justify-between cursor-pointer"
-                              >
-                                <span className="flex items-center gap-2">
-                                  <Users className="w-3.5 h-3.5 text-slate-400" /> Personnel
-                                </span>
-                                <span className="px-1.5 py-0.2 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold">
-                                  {v.personnel.length}
-                                </span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => openExistingVendorDrawer(v, 'edit', 'Overview')}
-                                className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
-                              >
-                                <UserCheck className="w-3.5 h-3.5 text-slate-400" /> Manage User Account
-                              </button>
-                              <div className="my-1 border-t border-slate-100" />
-                              <button
-                                type="button"
-                                onClick={() => openBulkDeleteDrawer([v.id])}
-                                className="w-full px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50 flex items-center gap-2 font-medium cursor-pointer"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" /> Delete vendor
-                              </button>
-                            </div>
-                          )}
+                        <div className="inline-flex items-center justify-end">
+                          <RowActionMenu
+                            ariaLabel={`Actions for ${v.name}`}
+                            items={[
+                              {
+                                id: 'view',
+                                label: 'View details',
+                                icon: <Eye className="w-3.5 h-3.5 text-slate-400" />,
+                                onClick: () => openExistingVendorDrawer(v, 'view', 'Overview'),
+                              },
+                              {
+                                id: 'edit',
+                                label: 'Edit vendor',
+                                icon: <Edit2 className="w-3.5 h-3.5 text-slate-400" />,
+                                onClick: () => openExistingVendorDrawer(v, 'edit', 'Overview'),
+                              },
+                              {
+                                id: 'personnel',
+                                label: 'Personnel',
+                                icon: <Users className="w-3.5 h-3.5 text-slate-400" />,
+                                badge: v.personnel.length,
+                                onClick: () => openExistingVendorDrawer(v, 'view', 'Personnel'),
+                              },
+                              {
+                                id: 'account',
+                                label: 'Manage User Account',
+                                icon: <UserCheck className="w-3.5 h-3.5 text-slate-400" />,
+                                onClick: () => openExistingVendorDrawer(v, 'edit', 'Overview'),
+                              },
+                              {
+                                id: 'delete',
+                                label: 'Delete vendor',
+                                icon: <Trash2 className="w-3.5 h-3.5" />,
+                                tone: 'danger',
+                                dividerBefore: true,
+                                onClick: () => openBulkDeleteDrawer([v.id]),
+                              },
+                            ]}
+                          />
                         </div>
                       </td>
                     </tr>
@@ -6108,15 +5989,15 @@ export const VendorsPageContent: React.FC<VendorsPageContentProps> = ({ companyC
         </div>
       )}
 
-      {/* 8.4 FOUR-STAGE CSV IMPORT RIGHT-SIDE DRAWER (Section 10) */}
+      {/* 8.4 DIRECT CSV IMPORT RIGHT-SIDE DRAWER */}
       {activeDrawer === 'import' && (
         <div className="fixed inset-0 z-[100] flex justify-end bg-slate-900/30 backdrop-blur-[1px]">
-          <div className="w-[680px] max-w-full h-full bg-white shadow-2xl border-l border-slate-200 flex flex-col">
-            <div className="px-6 py-3.5 border-b border-slate-200 flex items-center justify-between shrink-0">
+          <div className="w-[620px] max-w-full h-full bg-white shadow-2xl border-l border-slate-200 flex flex-col">
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between shrink-0">
               <div>
-                <h2 className="text-base font-bold text-slate-900">Import vendor CSV</h2>
-                <p className="text-[11px] text-slate-500">
-                  Four-stage CSV importer: Source → Match → Validate → Import
+                <h2 className="text-base font-bold text-slate-900">Import Vendors via CSV</h2>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Upload a CSV file to import vendor records directly into Vendor Master.
                 </p>
               </div>
               <button
@@ -6128,328 +6009,35 @@ export const VendorsPageContent: React.FC<VendorsPageContentProps> = ({ companyC
               </button>
             </div>
 
-            {/* Step Indicator */}
-            <div className="px-6 py-2.5 bg-slate-50 border-b border-slate-200 grid grid-cols-4 gap-2 shrink-0">
-              {(['1. Source', '2. Match', '3. Validate', '4. Import'] as const).map((label, idx) => (
-                <div
-                  key={label}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold text-center border ${
-                    importStep === idx
-                      ? 'bg-[#FFF3EE] text-[#B85324] border-[#FA8A63]'
-                      : importStep > idx
-                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                      : 'bg-white text-slate-400 border-slate-200'
-                  }`}
-                >
-                  {label}
-                </div>
-              ))}
-            </div>
-
-            {/* Step Content */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-5">
-              {importStep === 0 && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="text-xs font-bold text-slate-800">
-                      Upload a CSV file (.csv only)
-                      <InfoTip text={VENDOR_TOOLTIPS.csv_source} align="left" />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={downloadCsvTemplate}
-                        className="h-7 px-2.5 rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 cursor-pointer"
-                      >
-                        Download CSV template
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          loadCsvIntoImporter('sample_vendors_import.csv', SAMPLE_CSV_IMPORT_TEXT)
-                        }
-                        className="h-7 px-2.5 rounded-md bg-[#FFF3EE] text-[#B85324] hover:bg-[#fee5d8] text-xs font-semibold cursor-pointer"
-                      >
-                        Use sample import rows
-                      </button>
-                    </div>
-                  </div>
-
-                  {importFileError && (
-                    <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-700 font-medium flex items-center gap-2">
-                      <AlertTriangle className="w-4 h-4 shrink-0" />
-                      <span>{importFileError}</span>
-                    </div>
-                  )}
-
-                  <div
-                    onDragOver={e => e.preventDefault()}
-                    onDrop={e => {
-                      e.preventDefault();
-                      const file = e.dataTransfer.files?.[0];
-                      if (file) handleImportFileSelect(file);
-                    }}
-                    onClick={() => fileInputRef.current?.click()}
-                    className="border-2 border-dashed border-slate-300 hover:border-[#FA8A63] rounded-xl p-10 text-center bg-slate-50/60 cursor-pointer transition-colors"
-                  >
-                    <Upload className="w-8 h-8 text-slate-400 mx-auto mb-2" />
-                    <div className="text-xs font-bold text-slate-800">
-                      Drag and drop a .csv file here, or click to browse
-                    </div>
-                    <p className="text-[11px] text-slate-500 mt-1">
-                      Template headers: Name, Phone, Email, Website URL, Country, Address. XLS/XLSX files are not enabled.
-                    </p>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept=".csv"
-                      onChange={e => {
-                        const file = e.target.files?.[0];
-                        if (file) handleImportFileSelect(file);
-                      }}
-                      className="hidden"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {importStep === 1 && (
-                <div className="space-y-4">
-                  <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
-                    <span>
-                      Source file: <strong className="text-slate-900">{importFileName}</strong> (
-                      {importRawRows.length} data rows)
-                    </span>
-                    <InfoTip text={VENDOR_TOOLTIPS.column_matching} align="right" />
-                  </div>
-
-                  <div className="space-y-2.5">
-                    {(
-                      [
-                        { key: 'name', label: 'Name', required: true },
-                        { key: 'phone', label: 'Phone', required: false },
-                        { key: 'email', label: 'Email', required: false },
-                        { key: 'website_url', label: 'Website URL', required: false },
-                        { key: 'country', label: 'Country', required: false },
-                        { key: 'address', label: 'Address (links/creates Place)', required: false },
-                      ] as const
-                    ).map(field => (
-                      <div
-                        key={field.key}
-                        className="p-3 rounded-lg border border-slate-200 bg-white flex items-center justify-between gap-4"
-                      >
-                        <div className="text-xs font-semibold text-slate-800">
-                          {field.label}{' '}
-                          {field.required && <span className="text-rose-500">*</span>}
-                        </div>
-                        <select
-                          value={importMapping[field.key] || ''}
-                          onChange={e =>
-                            setImportMapping(prev => ({ ...prev, [field.key]: e.target.value }))
-                          }
-                          className="w-60 h-8 px-2.5 rounded-md border border-slate-200 bg-white text-xs"
-                        >
-                          <option value="">-- Ignore / Unmapped --</option>
-                          {importHeaders.map(h => (
-                            <option key={h} value={h}>
-                              {h}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    ))}
-                  </div>
-
-                  {!importMapping.name && (
-                    <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
-                      Mapping the <strong>Name</strong> column is mandatory before proceeding to validation.
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {importStep === 2 && (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="p-3 rounded-xl border border-slate-200 bg-slate-50">
-                      <div className="text-[11px] text-slate-500">Total rows</div>
-                      <div className="text-lg font-bold text-slate-900">
-                        {validatedImportRows.length}
-                      </div>
-                    </div>
-                    <div className="p-3 rounded-xl border border-emerald-200 bg-emerald-50">
-                      <div className="text-[11px] font-semibold text-emerald-700 flex items-center">
-                        <span>Eligible</span>
-                        <InfoTip text={VENDOR_TOOLTIPS.eligible_rows} align="center" />
-                      </div>
-                      <div className="text-lg font-bold text-emerald-800">
-                        {validatedImportRows.filter(r => r.valid).length}
-                      </div>
-                    </div>
-                    <div className="p-3 rounded-xl border border-rose-200 bg-rose-50">
-                      <div className="text-[11px] font-semibold text-rose-700 flex items-center">
-                        <span>Need attention</span>
-                        <InfoTip text={VENDOR_TOOLTIPS.validation} align="right" />
-                      </div>
-                      <div className="text-lg font-bold text-rose-800">
-                        {validatedImportRows.filter(r => !r.valid).length}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="border border-slate-200 rounded-xl overflow-hidden">
-                    <table className="w-full text-left text-xs border-collapse">
-                      <thead className="bg-slate-50 border-b border-slate-200">
-                        <tr>
-                          <th className="w-10 px-3 py-2">
-                            <input
-                              type="checkbox"
-                              checked={
-                                validatedImportRows.filter(r => r.valid).length > 0 &&
-                                validatedImportRows
-                                  .filter(r => r.valid)
-                                  .every(r => importSelectedRowIndexes.has(r.idx))
-                              }
-                              onChange={e => {
-                                if (e.target.checked) {
-                                  setImportSelectedRowIndexes(
-                                    new Set(
-                                      validatedImportRows.filter(r => r.valid).map(r => r.idx)
-                                    )
-                                  );
-                                } else {
-                                  setImportSelectedRowIndexes(new Set());
-                                }
-                              }}
-                              className="rounded border-slate-300 text-[#FA8A63]"
-                            />
-                          </th>
-                          <th className="px-3 py-2 font-semibold text-slate-600">Row #</th>
-                          <th className="px-3 py-2 font-semibold text-slate-600">Vendor Name</th>
-                          <th className="px-3 py-2 font-semibold text-slate-600">Email</th>
-                          <th className="px-3 py-2 font-semibold text-slate-600">Country</th>
-                          <th className="px-3 py-2 font-semibold text-slate-600">Validation</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {validatedImportRows.map(r => (
-                          <tr
-                            key={r.idx}
-                            className={r.valid ? 'bg-white' : 'bg-rose-50/40 text-slate-500'}
-                          >
-                            <td className="px-3 py-2">
-                              <input
-                                type="checkbox"
-                                disabled={!r.valid}
-                                checked={r.valid && importSelectedRowIndexes.has(r.idx)}
-                                onChange={() => {
-                                  setImportSelectedRowIndexes(prev => {
-                                    const next = new Set(prev);
-                                    if (next.has(r.idx)) next.delete(r.idx);
-                                    else next.add(r.idx);
-                                    return next;
-                                  });
-                                }}
-                                className="rounded border-slate-300 text-[#FA8A63] disabled:opacity-40"
-                              />
-                            </td>
-                            <td className="px-3 py-2 font-mono text-[11px]">{r.fileRowNum}</td>
-                            <td className="px-3 py-2 font-semibold text-slate-900">
-                              {r.name || <span className="text-rose-500 italic">(Blank)</span>}
-                            </td>
-                            <td className="px-3 py-2">{r.email || '—'}</td>
-                            <td className="px-3 py-2">{r.country}</td>
-                            <td className="px-3 py-2">
-                              {r.valid ? (
-                                <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold">
-                                  Eligible
-                                </span>
-                              ) : (
-                                <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 text-[10px] font-bold">
-                                  {r.error}
-                                </span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {importStep === 3 && (
-                <div className="py-10 text-center space-y-3">
-                  <div className="w-12 h-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto">
-                    <CheckCircle2 className="w-6 h-6" />
-                  </div>
-                  <h3 className="text-sm font-bold text-slate-900">Vendor import completed</h3>
-                  <p className="text-xs text-slate-600 max-w-md mx-auto">
-                    Successfully imported <strong>{importedCountResult}</strong> standard Active vendor record{importedCountResult === 1 ? '' : 's'} into local Vendor Master storage. Addresses were matched or created in Place Master.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setActiveDrawer(null)}
-                    className="h-8 px-4 rounded-lg bg-[#FA8A63] hover:bg-[#e57953] text-white text-xs font-semibold cursor-pointer"
-                  >
-                    View directory
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Sticky Import Footer */}
-            <div className="px-6 py-3.5 border-t border-slate-200 bg-slate-50 flex items-center justify-between shrink-0">
-              <div>
-                {importStep === 1 && (
-                  <button
-                    type="button"
-                    onClick={() => setImportStep(0)}
-                    className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 cursor-pointer"
-                  >
-                    Back
-                  </button>
-                )}
-                {importStep === 2 && (
-                  <button
-                    type="button"
-                    onClick={() => setImportStep(1)}
-                    className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 cursor-pointer"
-                  >
-                    Back
-                  </button>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setActiveDrawer(null)}
-                  className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 cursor-pointer"
-                >
-                  Close
-                </button>
-                {importStep === 1 && (
-                  <button
-                    type="button"
-                    disabled={!importMapping.name}
-                    onClick={proceedToValidateStep}
-                    className="h-8 px-4 rounded-lg bg-[#FA8A63] hover:bg-[#e57953] disabled:opacity-40 text-white text-xs font-semibold cursor-pointer"
-                  >
-                    Validate rows
-                  </button>
-                )}
-                {importStep === 2 && (
-                  <button
-                    type="button"
-                    disabled={importSelectedRowIndexes.size === 0}
-                    onClick={executeCsvImport}
-                    className="h-8 px-4 rounded-lg bg-[#FA8A63] hover:bg-[#e57953] disabled:opacity-40 text-white text-xs font-semibold cursor-pointer"
-                  >
-                    Import {importSelectedRowIndexes.size}
-                  </button>
-                )}
-              </div>
+            <div className="flex-1 overflow-y-auto p-6">
+              <DirectBulkUploadView
+                status={vendorUpload.status}
+                progress={vendorUpload.progress}
+                fileLabel={vendorUpload.fileLabel}
+                fileMeta={vendorUpload.fileMeta}
+                errorMessage={vendorUpload.errorMessage}
+                doneSummary={vendorUpload.doneSummary}
+                accept=".csv,text/csv"
+                dropTitle="Drag and drop a .csv file here, or click to browse"
+                dropSubtitle="Template headers: Name, Phone, Email, Website URL, Country, Address."
+                chooseButtonLabel="Choose CSV file"
+                downloadLabel="Download CSV template"
+                sampleLabel="Use sample CSV"
+                templateTitle="Need a starting format?"
+                templateSubtitle="Download standard vendor CSV template or upload sample rows."
+                doneButtonLabel="View directory"
+                onFileSelected={handleImportFileSelect}
+                onDownloadTemplate={downloadCsvTemplate}
+                onUseSample={() =>
+                  processVendorCsvDirect(
+                    'sample_vendors_import.csv',
+                    SAMPLE_CSV_IMPORT_TEXT,
+                    SAMPLE_CSV_IMPORT_TEXT.length
+                  )
+                }
+                onReset={vendorUpload.reset}
+                onDone={() => setActiveDrawer(null)}
+              />
             </div>
           </div>
         </div>
@@ -6523,51 +6111,90 @@ export const VendorsPageContent: React.FC<VendorsPageContentProps> = ({ companyC
         </div>
       )}
 
-      {/* CONFIRM VENDOR BULK DELETION MODAL */}
-      {activeDialog === 'confirm-bulk-delete' && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40">
-          <div className="w-[420px] bg-white rounded-xl shadow-2xl border border-slate-200 p-5 space-y-4">
-            <div className="flex items-center gap-2.5 text-rose-600">
-              <AlertTriangle className="w-5 h-5 shrink-0" />
-              <h3 className="text-sm font-bold text-slate-900">
-                Confirm vendor deletion ({bulkReviewSummary.eligible.length})
-              </h3>
-            </div>
-            <p className="text-xs text-slate-600">
-              Permanently delete <strong>{bulkReviewSummary.eligible.length}</strong> eligible local vendor record{bulkReviewSummary.eligible.length === 1 ? '' : 's'}?
-              {bulkReviewSummary.skipped.length > 0 && (
-                <span>
-                  {' '}
-                  The <strong>{bulkReviewSummary.skipped.length}</strong> skipped vendor{bulkReviewSummary.skipped.length === 1 ? '' : 's'} with linked personnel will remain untouched.
-                </span>
-              )}{' '}
-              This action cannot be undone in the local demo.
-            </p>
-            <div className="flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setActiveDialog(null)}
-                className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={executeConfirmedBulkDelete}
-                className="h-8 px-4 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold cursor-pointer"
-              >
-                Confirm delete ({bulkReviewSummary.eligible.length})
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* CONFIRM VENDOR BULK DELETION MODAL WITH CONFIRMATION CHIPS */}
+      <DeleteConfirmationModal
+        isOpen={activeDialog === 'confirm-bulk-delete'}
+        zIndexClass="z-[120]"
+        title={`Confirm vendor deletion (${bulkReviewSummary.eligible.length})`}
+        description={
+          <>
+            Permanently delete <strong>{bulkReviewSummary.eligible.length}</strong> eligible local
+            vendor record{bulkReviewSummary.eligible.length === 1 ? '' : 's'}?
+            {bulkReviewSummary.skipped.length > 0 && (
+              <span>
+                {' '}
+                The <strong>{bulkReviewSummary.skipped.length}</strong> skipped vendor
+                {bulkReviewSummary.skipped.length === 1 ? '' : 's'} with linked personnel will
+                remain untouched.
+              </span>
+            )}{' '}
+            This action cannot be undone in the local demo.
+          </>
+        }
+        confirmLabel={`Confirm delete (${bulkReviewSummary.eligible.length})`}
+        targetChips={[
+          ...bulkReviewSummary.eligible.slice(0, 5).map((v) => ({
+            id: v.id,
+            label: v.name,
+            sublabel: getVendorTypeLabel(v.type),
+            tone: 'orange' as const,
+          })),
+          ...(bulkReviewSummary.eligible.length > 5
+            ? [
+                {
+                  id: 'more-vendors',
+                  label: `+${bulkReviewSummary.eligible.length - 5} more`,
+                  tone: 'slate' as const,
+                },
+              ]
+            : []),
+        ]}
+        confirmationChips={[
+          {
+            id: 'selected',
+            label: `${bulkReviewSummary.records.length} Selected`,
+            tone: 'slate',
+          },
+          {
+            id: 'eligible',
+            label: `${bulkReviewSummary.eligible.length} Eligible to Delete`,
+            tone: 'emerald',
+          },
+          ...(bulkReviewSummary.skipped.length > 0
+            ? [
+                {
+                  id: 'skipped',
+                  label: `${bulkReviewSummary.skipped.length} Skipped (Has Personnel)`,
+                  tone: 'amber' as const,
+                },
+              ]
+            : []),
+        ]}
+        onCancel={() => setActiveDialog(null)}
+        onConfirm={() => executeConfirmedBulkDelete()}
+      />
 
-      {/* REMOVE PERSONNEL MEMBERSHIP CONFIRMATION MODAL */}
+      {/* REMOVE PERSONNEL MEMBERSHIP CONFIRMATION MODAL WITH CONFIRMATION CHIPS */}
       {activeDialog === 'remove-personnel' && contactToRemove && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40">
-          <div className="w-96 bg-white rounded-xl shadow-2xl border border-slate-200 p-5 space-y-4">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 p-5 space-y-4">
             <h3 className="text-sm font-bold text-slate-900">Remove personnel?</h3>
+            <div className="flex flex-wrap gap-1.5">
+              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border border-orange-200 bg-orange-50 text-[#B85324]">
+                {contactToRemove.name}
+              </span>
+              {activeVendorRecord && (
+                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border border-sky-200 bg-sky-50 text-sky-700">
+                  {activeVendorRecord.name}
+                </span>
+              )}
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold border border-emerald-200 bg-emerald-50 text-emerald-700">
+                <CheckCircle2 size={12} /> Contact Master Record Intact
+              </span>
+              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border border-amber-200 bg-amber-50 text-amber-800">
+                Membership Removal Only
+              </span>
+            </div>
             <p className="text-xs text-slate-600">
               Remove <strong>{contactToRemove.name}</strong> from this Vendor’s personnel memberships? The Contact master record and any platform User Account will remain intact.
             </p>

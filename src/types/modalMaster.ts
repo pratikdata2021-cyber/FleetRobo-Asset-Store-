@@ -677,10 +677,14 @@ export const DEVICE_COLUMNS: ModalColumnDef[] = [
   { key: 'kind', label: 'Device category', minWidth: '145px' },
   { key: 'manufacturer', label: 'Vendor / Manufacturer', minWidth: '155px' },
   { key: 'modelText', label: 'Model', minWidth: '145px' },
+  { key: 'identifierType', label: 'Identifier type', minWidth: '130px' },
   { key: 'mode', label: 'Mode', minWidth: '135px' },
   { key: 'platformProtocol', label: 'Platform protocol', minWidth: '145px' },
+  { key: 'channelCount', label: 'Channels', minWidth: '95px' },
   { key: 'serial', label: 'Serial number', minWidth: '150px' },
   { key: 'imei', label: 'IMEI', minWidth: '160px' },
+  { key: 'inventoryLocation', label: 'Inventory location', minWidth: '155px' },
+  { key: 'hardwareLifecycle', label: 'Inventory status', minWidth: '140px' },
   { key: 'registeredAt', label: 'Registered', minWidth: '120px' },
   { key: 'updatedAt', label: 'Updated', minWidth: '120px' }
 ];
@@ -690,12 +694,14 @@ export const SENSOR_COLUMNS: ModalColumnDef[] = [
   { key: 'name', label: 'Sensor name', minWidth: '235px' },
   { key: 'deviceId', label: 'Sensor ID', minWidth: '130px' },
   { key: 'kind', label: 'Sensor type', minWidth: '155px' },
-  { key: 'manufacturer', label: 'Manufacturer', minWidth: '140px' },
+  { key: 'manufacturer', label: 'Vendor / Manufacturer', minWidth: '155px' },
   { key: 'modelText', label: 'Model', minWidth: '155px' },
+  { key: 'identifierType', label: 'Identifier type', minWidth: '130px' },
   { key: 'serial', label: 'Serial number', minWidth: '155px' },
   { key: 'measurementCapability', label: 'Measurement capability', minWidth: '165px' },
   { key: 'measurementUnit', label: 'Measurement unit', minWidth: '135px' },
-  { key: 'measurementRange', label: 'Range', minWidth: '135px' },
+  { key: 'measurementRange', label: 'Measurement range', minWidth: '145px' },
+  { key: 'inventoryLocation', label: 'Inventory location', minWidth: '155px' },
   { key: 'hardwareLifecycle', label: 'Inventory status', minWidth: '140px' },
   { key: 'registeredAt', label: 'Registered', minWidth: '120px' },
   { key: 'updatedAt', label: 'Updated', minWidth: '120px' }
@@ -709,12 +715,14 @@ export const SIM_COLUMNS: ModalColumnDef[] = [
   { key: 'operator', label: 'Operator / Provider', minWidth: '145px' },
   { key: 'plan', label: 'Plan / package', minWidth: '160px' },
   { key: 'formFactor', label: 'Form factor', minWidth: '135px' },
+  { key: 'network', label: 'Network', minWidth: '115px' },
   { key: 'msisdn', label: 'Mobile number', minWidth: '145px' },
-  { key: 'status', label: 'Lifecycle', minWidth: '125px' },
+  { key: 'location', label: 'Inventory location', minWidth: '155px' },
+  { key: 'status', label: 'Inventory status', minWidth: '140px' },
   { key: 'assigned', label: 'Assigned to', minWidth: '175px' },
   { key: 'connection', label: 'Assigned connection', minWidth: '150px' },
-  { key: 'activationDate', label: 'Activation', minWidth: '120px' },
-  { key: 'renewalDate', label: 'Expiry / renewal', minWidth: '130px' }
+  { key: 'activationDate', label: 'Activation date', minWidth: '130px' },
+  { key: 'renewalDate', label: 'Renewal / expiry date', minWidth: '155px' }
 ];
 
 // MD §3.1 — Mandatory Default Columns for Modal Connection (in exact order)
@@ -1009,21 +1017,21 @@ export const RESOURCE_VIEW_OPTIONAL_COLUMNS: ModalColumnDef[] = [
   },
   {
     key: 'driverDisplayName',
-    label: 'DRIVER DISPLAY NAME',
+    label: 'DRIVER NAME',
     minWidth: '170px',
     optional: true,
     tooltip: 'Driver name from Driver Master when Resource Type is Driver.'
   },
   {
     key: 'vehicleDisplayName',
-    label: 'VEHICLE DISPLAY NAME',
+    label: 'VEHICLE NAME',
     minWidth: '185px',
     optional: true,
     tooltip: 'Vehicle display label from Vehicle Master when Resource Type is Vehicle.'
   },
   {
     key: 'updatedAt',
-    label: 'LAST UPDATED',
+    label: 'UPDATED ON',
     minWidth: '170px',
     optional: true,
     tooltip: 'Most recent update timestamp for this allocation record.'

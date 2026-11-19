@@ -72,6 +72,8 @@ import {
   HardwareCountChips
 } from './modal-mapping/ExpandableHardwareRows';
 import { ColumnCataloguePopover } from './ColumnCataloguePopover';
+import { RowActionMenu } from './common/RowActionMenu';
+import { DeleteConfirmationModal } from './common/DeleteConfirmationModal';
 
 interface ModalConnectionTabProps {
   store: ModalMasterStore;
@@ -121,7 +123,6 @@ export const ModalConnectionTab: React.FC<ModalConnectionTabProps> = ({
     null | 'filters' | 'saved-views' | 'bulk' | 'import' | 'export'
   >(null);
   const [newViewName, setNewViewName] = useState('');
-  const [openMoreRowId, setOpenMoreRowId] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set(['CON-1277']));
 
   // Drawers
@@ -570,7 +571,6 @@ export const ModalConnectionTab: React.FC<ModalConnectionTabProps> = ({
     }));
     setSortKey('');
     setCurrentPage(1);
-    setOpenMoreRowId(null);
     showToast(`Duplicated ${conn.id} as Draft ${newId} (select fresh hardware units to bind).`);
   };
 
@@ -812,9 +812,9 @@ export const ModalConnectionTab: React.FC<ModalConnectionTabProps> = ({
     setActiveOverlay(null);
   };
 
-  // Import Validation Preview
-  const importPreview = useMemo(() => {
-    const raw = importText.trim();
+  // Direct Import parser helper
+  const parseConnectionImportPayload = (fmt: 'csv' | 'json', rawText: string) => {
+    const raw = rawText.trim();
     if (!raw) {
       return {
         valid: [] as ConnectionRecord[],
@@ -934,7 +934,7 @@ export const ModalConnectionTab: React.FC<ModalConnectionTabProps> = ({
       });
     };
 
-    if (importFormat === 'json') {
+    if (fmt === 'json') {
       try {
         const parsed = JSON.parse(raw);
         const arr = Array.isArray(parsed) ? parsed : [parsed];
@@ -964,7 +964,7 @@ export const ModalConnectionTab: React.FC<ModalConnectionTabProps> = ({
     }
 
     return { valid, invalid };
-  }, [importText, importFormat, store.connections, store.devices, store.sensors, store.sims, actorName]);
+  };
 
   // Bulk handlers
   const selectedConnections = useMemo(
@@ -1301,7 +1301,7 @@ export const ModalConnectionTab: React.FC<ModalConnectionTabProps> = ({
                     </th>
                   );
                 })}
-                <th className="sticky right-0 z-30 bg-[#F8FAFC] px-3 py-2.5 text-right border-l border-slate-200 w-[132px]">
+                <th className="sticky right-0 z-30 bg-[#F8FAFC] px-3 py-2.5 text-right border-l border-slate-200 w-[78px]">
                   <div className="inline-flex items-center justify-end">
                     <span>ACTIONS</span>
                     <MappingInfoTooltip text={MODAL_CONNECTION_ACTIONS_TOOLTIP} align="right" />
@@ -1588,110 +1588,62 @@ export const ModalConnectionTab: React.FC<ModalConnectionTabProps> = ({
                           isExpanded ? 'bg-[#FFF9F6]' : 'bg-white group-hover:bg-slate-50'
                         }`}
                       >
-                        <div className="inline-flex items-center gap-1 relative">
-                          <button
-                            type="button"
-                            title="View Details"
-                            onClick={() => setDetailsState({ conn, tab: 'overview' })}
-                            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 cursor-pointer"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                          </button>
-                          {canEdit && (
-                            <button
-                              type="button"
-                              title="Edit Mapping"
-                              onClick={() => setFormState({ mode: 'edit', conn })}
-                              className="p-1.5 rounded-lg text-slate-500 hover:text-[#FA8A63] hover:bg-orange-50 cursor-pointer"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                          {canEdit && (
-                            <button
-                              type="button"
-                              title="Delete Mapping"
-                              onClick={() => setConnectionToDelete(conn)}
-                              className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            title="View History"
-                            onClick={() => setDetailsState({ conn, tab: 'activity' })}
-                            className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 cursor-pointer"
-                          >
-                            <History className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            title="More actions"
-                            onClick={() => setOpenMoreRowId((curr) => (curr === conn.id ? null : conn.id))}
-                            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 cursor-pointer"
-                          >
-                            <MoreVertical className="w-3.5 h-3.5" />
-                          </button>
-
-                          {openMoreRowId === conn.id && (
-                            <div className="absolute right-0 top-8 w-52 bg-white rounded-xl shadow-xl border border-slate-200 py-1 z-40 text-left text-[12px]">
-                              {canEdit && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleDuplicateAsDraft(conn)}
-                                  className="w-full px-3 py-1.5 hover:bg-slate-50 flex items-center gap-2 text-slate-700 cursor-pointer"
-                                >
-                                  <Copy className="w-3.5 h-3.5 text-slate-400" /> Duplicate as Draft
-                                </button>
-                              )}
-                              {canEdit && conn.status !== 'Inactive' && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setOpenMoreRowId(null);
-                                    setDeactivateTarget(conn);
-                                  }}
-                                  className="w-full px-3 py-1.5 hover:bg-rose-50 flex items-center gap-2 text-rose-700 cursor-pointer"
-                                >
-                                  <Power className="w-3.5 h-3.5" /> Deactivate Connection
-                                </button>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setOpenMoreRowId(null);
-                                  setDetailsState({ conn, tab: 'activity' });
-                                }}
-                                className="w-full px-3 py-1.5 hover:bg-slate-50 flex items-center gap-2 text-slate-700 cursor-pointer"
-                              >
-                                <History className="w-3.5 h-3.5 text-slate-400" /> View Activity
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setOpenMoreRowId(null);
-                                  runExportConnections(conn);
-                                }}
-                                className="w-full px-3 py-1.5 hover:bg-slate-50 flex items-center gap-2 text-slate-700 cursor-pointer"
-                              >
-                                <Download className="w-3.5 h-3.5 text-slate-400" /> Export This Record
-                              </button>
-                              <div className="border-t border-slate-100 my-1" />
-                              {canEdit && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setOpenMoreRowId(null);
-                                    setConnectionToDelete(conn);
-                                  }}
-                                  className="w-full px-3 py-1.5 hover:bg-rose-50 flex items-center gap-2 text-rose-600 font-medium cursor-pointer"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" /> Delete Connection
-                                </button>
-                              )}
-                            </div>
-                          )}
+                        <div className="inline-flex items-center justify-end">
+                          <RowActionMenu
+                            ariaLabel={`Actions for ${conn.id}`}
+                            items={[
+                              {
+                                id: 'view',
+                                label: 'View Details',
+                                icon: <Eye className="w-3.5 h-3.5 text-slate-400" />,
+                                onClick: () => setDetailsState({ conn, tab: 'overview' }),
+                              },
+                              {
+                                id: 'edit',
+                                label: 'Edit Mapping',
+                                icon: <Edit2 className="w-3.5 h-3.5 text-slate-400" />,
+                                hidden: !canEdit,
+                                onClick: () => setFormState({ mode: 'edit', conn }),
+                              },
+                              {
+                                id: 'history',
+                                label: 'View Activity & History',
+                                icon: <History className="w-3.5 h-3.5 text-slate-400" />,
+                                onClick: () => setDetailsState({ conn, tab: 'activity' }),
+                              },
+                              {
+                                id: 'duplicate',
+                                label: 'Duplicate as Draft',
+                                icon: <Copy className="w-3.5 h-3.5 text-slate-400" />,
+                                hidden: !canEdit,
+                                dividerBefore: true,
+                                onClick: () => handleDuplicateAsDraft(conn),
+                              },
+                              {
+                                id: 'export',
+                                label: 'Export This Record',
+                                icon: <Download className="w-3.5 h-3.5 text-slate-400" />,
+                                onClick: () => runExportConnections(conn),
+                              },
+                              {
+                                id: 'deactivate',
+                                label: 'Deactivate Connection',
+                                icon: <Power className="w-3.5 h-3.5" />,
+                                tone: 'warning',
+                                hidden: !canEdit || conn.status === 'Inactive',
+                                onClick: () => setDeactivateTarget(conn),
+                              },
+                              {
+                                id: 'delete',
+                                label: 'Delete Connection',
+                                icon: <Trash2 className="w-3.5 h-3.5" />,
+                                tone: 'danger',
+                                hidden: !canEdit,
+                                dividerBefore: true,
+                                onClick: () => setConnectionToDelete(conn),
+                              },
+                            ]}
+                          />
                         </div>
                       </td>
                     </tr>
@@ -1884,36 +1836,30 @@ export const ModalConnectionTab: React.FC<ModalConnectionTabProps> = ({
 
       {activeOverlay === 'import' && (
         <ModalConnectionImportDrawer
-          importFormat={importFormat}
-          setImportFormat={setImportFormat}
-          importText={importText}
-          setImportText={setImportText}
-          validCount={importPreview.valid.length}
-          invalidRows={importPreview.invalid}
-          onDownloadErrors={() =>
-            downloadModalCsv(
-              'fleetrobo-connection-import-errors.csv',
-              [
-                { key: 'line', label: 'Line', minWidth: '' },
-                { key: 'reason', label: 'Validation Error', minWidth: '' },
-                { key: 'raw', label: 'Raw Input', minWidth: '' }
-              ],
-              importPreview.invalid
-            )
-          }
-          onCommit={() => {
-            if (importPreview.valid.length === 0) return;
+          onProcessUpload={(fmt, rawContent) => {
+            const parsed = parseConnectionImportPayload(fmt, rawContent);
+            if (parsed.valid.length === 0) {
+              return {
+                uploaded: 0,
+                skipped: parsed.invalid.length,
+                error:
+                  parsed.invalid[0]?.reason ||
+                  'No valid connection rows found in the uploaded file.'
+              };
+            }
             setStore((prev) => ({
               ...prev,
-              connections: [...importPreview.valid, ...prev.connections]
+              connections: [...parsed.valid, ...prev.connections]
             }));
             setSortKey('');
             setCurrentPage(1);
             showToast(
-              `Imported ${importPreview.valid.length} connection(s) (${importPreview.invalid.length} rejected).`
+              `Imported ${parsed.valid.length} connection(s) (${parsed.invalid.length} skipped).`
             );
-            setImportText('');
-            setActiveOverlay(null);
+            return {
+              uploaded: parsed.valid.length,
+              skipped: parsed.invalid.length
+            };
           }}
           onClose={() => setActiveOverlay(null)}
         />
@@ -1973,78 +1919,157 @@ export const ModalConnectionTab: React.FC<ModalConnectionTabProps> = ({
         />
       )}
 
-      {/* Deactivate Confirmation Modal */}
-      {deactivateTarget && (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-900/40 p-4">
-          <div className="w-full max-w-[440px] bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
-            <div className="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-rose-700 font-bold text-[14px]">
-                <AlertTriangle className="w-4 h-4" /> Deactivate {deactivateTarget.id}?
+      {/* Deactivate Confirmation Modal with Confirmation Chips */}
+      {deactivateTarget && (() => {
+        const activeBindingsCount = store.hardwareBindings.filter(
+          (b) => b.connectionId === deactivateTarget.id && !b.endedAt
+        ).length;
+        return (
+          <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+            <div className="w-full max-w-[480px] bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+              <div className="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between">
+                <div className="flex items-center gap-2 text-rose-700 font-bold text-[14px]">
+                  <AlertTriangle className="w-4 h-4" /> Deactivate {deactivateTarget.connectionId || deactivateTarget.id}?
+                </div>
+                <button type="button" onClick={() => setDeactivateTarget(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-              <button type="button" onClick={() => setDeactivateTarget(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="p-5 text-[12px] text-slate-600 space-y-2">
-              <p>
-                Deactivating <strong className="text-slate-900">{deactivateTarget.name}</strong> will set the connection status to{' '}
-                <strong>Inactive</strong> and end its{' '}
-                <strong>
-                  {store.hardwareBindings.filter((b) => b.connectionId === deactivateTarget.id && !b.endedAt).length}
-                </strong>{' '}
-                active/scheduled pairwise binding(s) as of now while preserving full historical audit records.
-              </p>
-            </div>
-            <div className="px-5 py-3 border-t border-slate-200 flex justify-end gap-2 bg-slate-50">
-              <button type="button" onClick={() => setDeactivateTarget(null)} className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-[12px] font-semibold cursor-pointer">
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => handleConfirmDeactivate(deactivateTarget)}
-                className="h-8 px-4 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[12px] font-semibold cursor-pointer"
-              >
-                Confirm Deactivate
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Delete Connection Confirmation Modal */}
-      {connectionToDelete && (
-        <div className="fixed inset-0 z-[95] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 shrink-0">
-                <Trash2 size={20} />
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-slate-900">Delete Connection Mapping?</h4>
-                <p className="text-xs text-slate-600 mt-1">
-                  Are you sure you want to delete connection <strong className="text-slate-900 font-semibold">{connectionToDelete.name}</strong> ({connectionToDelete.connectionId})? This will permanently remove the hardware-vehicle mapping relationship.
+              <div className="p-5 text-[12px] text-slate-600 space-y-3.5">
+                <div className="flex flex-wrap gap-1.5">
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border border-orange-200 bg-orange-50 text-[#B85324]">
+                    {deactivateTarget.connectionId || deactivateTarget.id}
+                  </span>
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border border-sky-200 bg-sky-50 text-sky-700">
+                    {deactivateTarget.companyName}
+                  </span>
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border border-amber-200 bg-amber-50 text-amber-800">
+                    {activeBindingsCount} Binding(s) to End
+                  </span>
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border border-emerald-200 bg-emerald-50 text-emerald-700">
+                    Audit History Preserved
+                  </span>
+                </div>
+                <p>
+                  Deactivating <strong className="text-slate-900">{deactivateTarget.name}</strong> will set the connection status to{' '}
+                  <strong>Inactive</strong> and end its{' '}
+                  <strong>{activeBindingsCount}</strong>{' '}
+                  active/scheduled pairwise binding(s) as of now while preserving full historical audit records.
                 </p>
               </div>
-            </div>
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setConnectionToDelete(null)}
-                className="px-3.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmDeleteConnection}
-                className="px-3.5 py-1.5 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg shadow-sm cursor-pointer"
-              >
-                Delete Connection
-              </button>
+              <div className="px-5 py-3 border-t border-slate-200 flex justify-end gap-2 bg-slate-50">
+                <button type="button" onClick={() => setDeactivateTarget(null)} className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-[12px] font-semibold cursor-pointer">
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleConfirmDeactivate(deactivateTarget)}
+                  className="h-8 px-4 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[12px] font-semibold cursor-pointer"
+                >
+                  Confirm Deactivate
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
+
+      {/* Delete Connection Confirmation Modal with Confirmation Chips */}
+      {(() => {
+        if (!connectionToDelete) return null;
+        const activeBindingsCount = store.hardwareBindings.filter(
+          (b) => b.connectionId === connectionToDelete.id && !b.endedAt
+        ).length;
+        const activeAllocsCount = store.resourceAllocations.filter(
+          (a) => a.connectionId === connectionToDelete.id && !a.endedAt
+        ).length;
+        return (
+          <DeleteConfirmationModal
+            isOpen={Boolean(connectionToDelete)}
+            zIndexClass="z-[95]"
+            title="Delete Connection Mapping?"
+            description={
+              <>
+                Are you sure you want to delete connection{' '}
+                <strong className="text-slate-900 font-semibold">{connectionToDelete.name}</strong> (
+                {connectionToDelete.connectionId})? This will permanently remove the hardware-vehicle
+                mapping relationship.
+              </>
+            }
+            confirmLabel="Delete Connection"
+            targetChips={[
+              {
+                id: 'conId',
+                label: connectionToDelete.connectionId || connectionToDelete.id,
+                tone: 'orange',
+              },
+              { id: 'org', label: connectionToDelete.companyName, tone: 'blue' },
+              {
+                id: 'hw',
+                label: `${connectionToDelete.members?.length || 0} Hardware Unit(s)`,
+                tone: 'purple',
+              },
+              {
+                id: 'status',
+                label: connectionToDelete.status,
+                tone: connectionToDelete.status === 'Active' ? 'emerald' : 'slate',
+              },
+            ]}
+            confirmationChips={[
+              activeBindingsCount > 0
+                ? {
+                    id: 'bindings',
+                    label: `${activeBindingsCount} Open Hardware Binding(s)`,
+                    tone: 'amber',
+                  }
+                : {
+                    id: 'bindings',
+                    label: '0 Open Bindings',
+                    tone: 'emerald',
+                  },
+              activeAllocsCount > 0
+                ? {
+                    id: 'allocs',
+                    label: `${activeAllocsCount} Active Resource Allocation(s)`,
+                    tone: 'amber',
+                  }
+                : {
+                    id: 'allocs',
+                    label: '0 Active Allocations · Safe to Delete',
+                    tone: 'emerald',
+                  },
+              {
+                id: 'scope',
+                label: 'Permanent Connection Delete',
+                tone: 'rose',
+              },
+            ]}
+            warningNote={
+              activeBindingsCount > 0 || activeAllocsCount > 0 ? (
+                <>
+                  This connection still has open bindings or resource allocations. Recommended:{' '}
+                  <strong>Deactivate Instead</strong> to preserve audit history cleanly.
+                </>
+              ) : undefined
+            }
+            secondaryAction={
+              connectionToDelete.status === 'Active'
+                ? {
+                    label: 'Deactivate Instead',
+                    tone: 'amber',
+                    onClick: () => {
+                      const target = connectionToDelete;
+                      setConnectionToDelete(null);
+                      setDeactivateTarget(target);
+                    },
+                  }
+                : undefined
+            }
+            onCancel={() => setConnectionToDelete(null)}
+            onConfirm={handleConfirmDeleteConnection}
+          />
+        );
+      })()}
     </div>
   );
 };

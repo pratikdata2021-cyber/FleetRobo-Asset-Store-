@@ -25,6 +25,13 @@ import {
   saveCustomVehicleSkill
 } from '../types/vehicle';
 import {
+  ALL_VEHICLE_SEGMENTS,
+  VEHICLE_TYPES,
+  VehicleModelRecord,
+  formatVehicleModelLabel,
+  loadVehicleModelStore
+} from '../types/vehicleModelMaster';
+import {
   getCanonicalTransporterVendors,
   resolveTransporterVendor,
 } from '../data/vendorsSeed';
@@ -39,6 +46,7 @@ interface VehicleDrawerProps {
   onSwitchToEdit?: () => void;
   existingVehicles: Vehicle[];
   companyContext?: string;
+  zIndexClass?: string;
 }
 
 // Helper to format file sizes
@@ -186,7 +194,8 @@ export const VehicleDrawer: React.FC<VehicleDrawerProps> = ({
   onSaveVehicle,
   onSwitchToEdit,
   existingVehicles,
-  companyContext
+  companyContext,
+  zIndexClass = 'z-50'
 }) => {
   const [formData, setFormData] = useState<Partial<Vehicle>>({});
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -194,6 +203,45 @@ export const VehicleDrawer: React.FC<VehicleDrawerProps> = ({
   const [showDiscardConfirm, setShowDiscardConfirm] = useState<boolean>(false);
   const [prefillLoading, setPrefillLoading] = useState<boolean>(false);
   const [prefillFeedback, setPrefillFeedback] = useState<string>('');
+
+  // Vehicle Model Master integration state
+  const [vehicleModels, setVehicleModels] = useState<VehicleModelRecord[]>(() =>
+    loadVehicleModelStore()
+  );
+  const [machineModelMenuOpen, setMachineModelMenuOpen] = useState<boolean>(false);
+  const [machineModelSearch, setMachineModelSearch] = useState<string>('');
+  const [modelTypeFilter, setModelTypeFilter] = useState<string>('All');
+  const [modelSegmentFilter, setModelSegmentFilter] = useState<string>('All');
+  const [modelCompatibilityNotice, setModelCompatibilityNotice] = useState<string>('');
+  const [prefilledFromModelNotice, setPrefilledFromModelNotice] = useState<string>('');
+  const machineModelDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const syncVehicleModels = () => setVehicleModels(loadVehicleModelStore());
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'fleetrobo_vehicle_model_master_v1') syncVehicleModels();
+    };
+    window.addEventListener('fleetrobo:vehicle-models-updated', syncVehicleModels);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener('fleetrobo:vehicle-models-updated', syncVehicleModels);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!machineModelMenuOpen) return;
+    const handleOutside = (e: MouseEvent) => {
+      if (
+        machineModelDropdownRef.current &&
+        !machineModelDropdownRef.current.contains(e.target as Node)
+      ) {
+        setMachineModelMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [machineModelMenuOpen]);
 
   // Section 7 — Vehicle Skills multi-select dropdown state
   const [skillsMenuOpen, setSkillsMenuOpen] = useState<boolean>(false);
@@ -218,6 +266,7 @@ export const VehicleDrawer: React.FC<VehicleDrawerProps> = ({
 
   useEffect(() => {
     if (isOpen) {
+      setVehicleModels(loadVehicleModelStore());
       if (mode === 'create') {
         const defaultCompany = companyContext || 'Adani Port';
         setFormData({
@@ -230,13 +279,17 @@ export const VehicleDrawer: React.FC<VehicleDrawerProps> = ({
           fuel_refill: 0,
           fuel_calibration_type: 'Standard',
           fuel_type: 'Diesel',
-          machine_model: DEMO_LOOKUPS.machineModels[0],
-          model: DEMO_LOOKUPS.machineModels[0],
+          vehicle_model_id: '',
+          machine_model: '',
+          model: '',
           routes: [],
           sharing: [],
           fleets: [],
           trailers: [],
-          skills: []
+          skills: [],
+          ...(initialVehicle?.registration_number
+            ? { registration_number: initialVehicle.registration_number }
+            : {})
         });
       } else if (initialVehicle) {
         setFormData({
@@ -252,6 +305,18 @@ export const VehicleDrawer: React.FC<VehicleDrawerProps> = ({
       setFieldErrors({});
       setIsDirty(false);
       setPrefillFeedback('');
+      setMachineModelMenuOpen(false);
+      setMachineModelSearch('');
+      setModelTypeFilter(
+        mode !== 'create' && initialVehicle?.type ? initialVehicle.type : 'All'
+      );
+      setModelSegmentFilter(
+        mode !== 'create' && initialVehicle?.vehicle_segment
+          ? initialVehicle.vehicle_segment
+          : 'All'
+      );
+      setModelCompatibilityNotice('');
+      setPrefilledFromModelNotice('');
       setSkillsMenuOpen(false);
       setSkillsSearch('');
       setShowCustomSkillInput(false);
@@ -290,7 +355,117 @@ export const VehicleDrawer: React.FC<VehicleDrawerProps> = ({
     return list;
   }, [companyContext, formData.transporter, vendorRefreshTick]);
 
+  const activeVehicleModels = React.useMemo(
+    () => vehicleModels.filter((m) => m.isActive),
+    [vehicleModels]
+  );
+
+  const selectedMasterModel = React.useMemo(() => {
+    if (formData.vehicle_model_id) {
+      return vehicleModels.find((m) => m.id === formData.vehicle_model_id) || null;
+    }
+    const mm = (formData.machine_model || '').trim().toLowerCase();
+    if (!mm) return null;
+    return (
+      vehicleModels.find(
+        (m) =>
+          formatVehicleModelLabel(m).toLowerCase() === mm ||
+          m.modelName.toLowerCase() === mm
+      ) || null
+    );
+  }, [vehicleModels, formData.vehicle_model_id, formData.machine_model]);
+
+  const filteredActiveModels = React.useMemo(() => {
+    const q = machineModelSearch.trim().toLowerCase();
+    return activeVehicleModels.filter((m) => {
+      if (modelTypeFilter !== 'All' && m.vehicleType !== modelTypeFilter) {
+        return false;
+      }
+      if (modelSegmentFilter !== 'All' && m.vehicleSegment !== modelSegmentFilter) {
+        return false;
+      }
+      if (q) {
+        const hay = `${m.id} ${m.manufacturer} ${m.modelName} ${m.variant} ${m.vehicleType} ${m.vehicleSegment}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [activeVehicleModels, machineModelSearch, modelTypeFilter, modelSegmentFilter]);
+
   if (!isOpen) return null;
+
+  const handleSelectVehicleModel = (m: VehicleModelRecord) => {
+    if (isReadOnly) return;
+    const mappedClass =
+      m.vehicleSegment === 'HCV'
+        ? 'HMV'
+        : m.vehicleSegment === 'MCV'
+        ? 'MCV'
+        : m.vehicleSegment === 'LCV'
+        ? 'LCV'
+        : formData.class || 'HMV';
+
+    setFormData((prev) => ({
+      ...prev,
+      vehicle_model_id: m.id,
+      machine_model: formatVehicleModelLabel(m),
+      model: m.modelName,
+      make: m.manufacturer,
+      trim: m.variant,
+      type: m.vehicleType,
+      vehicle_segment: m.vehicleSegment,
+      class: mappedClass,
+      fuel_type: m.fuelType || prev.fuel_type || 'Diesel',
+      fuel_tank_capacity:
+        m.fuelTankCapacityL !== undefined && m.fuelTankCapacityL !== ''
+          ? m.fuelTankCapacityL
+          : prev.fuel_tank_capacity,
+    }));
+    setFieldErrors((prev) => {
+      const next = { ...prev };
+      delete next.machine_model;
+      return next;
+    });
+    setModelCompatibilityNotice('');
+    setPrefilledFromModelNotice(
+      `Linked ${m.id} · Prefilled manufacturer, type, segment & fuel defaults (editable).`
+    );
+    setMachineModelMenuOpen(false);
+    setMachineModelSearch('');
+    setIsDirty(true);
+  };
+
+  const handleModelFilterChange = (
+    nextType: string,
+    nextSegment: string
+  ) => {
+    setModelTypeFilter(nextType);
+    setModelSegmentFilter(nextSegment);
+
+    // Revalidate already-selected model against changed type/segment filter (PRD §8)
+    if (selectedMasterModel) {
+      const typeMismatch =
+        nextType !== 'All' && selectedMasterModel.vehicleType !== nextType;
+      const segMismatch =
+        nextSegment !== 'All' &&
+        selectedMasterModel.vehicleSegment !== nextSegment;
+      if (typeMismatch || segMismatch) {
+        setFormData((prev) => ({
+          ...prev,
+          vehicle_model_id: '',
+          machine_model: '',
+          model: '',
+          type: nextType !== 'All' ? nextType : prev.type,
+          vehicle_segment:
+            nextSegment !== 'All' ? nextSegment : prev.vehicle_segment,
+        }));
+        setPrefilledFromModelNotice('');
+        setModelCompatibilityNotice(
+          `Cleared "${formatVehicleModelLabel(selectedMasterModel)}" because it does not match ${nextType !== 'All' ? nextType : ''} ${nextSegment !== 'All' ? nextSegment : ''}. Please pick a compatible model.`
+        );
+      }
+    }
+  };
 
   const isReadOnly = mode === 'view';
 
@@ -499,8 +674,11 @@ export const VehicleDrawer: React.FC<VehicleDrawerProps> = ({
       name: generatedName!,
 
       // Section 1 — Basic Vehicle Details
+      vehicle_model_id: formData.vehicle_model_id || undefined,
       machine_model: machineModelVal,
-      model: machineModelVal,
+      model: formData.model || machineModelVal,
+      type: formData.type || selectedMasterModel?.vehicleType || 'Truck',
+      vehicle_segment: formData.vehicle_segment || selectedMasterModel?.vehicleSegment,
       client: formData.client || assignedCompany,
       chassis_number: chassisVal,
       vin: chassisVal,
@@ -577,7 +755,7 @@ export const VehicleDrawer: React.FC<VehicleDrawerProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden flex justify-end font-sans">
+    <div className={`fixed inset-0 ${zIndexClass} overflow-hidden flex justify-end font-sans`}>
       {/* Backdrop */}
       <div onClick={handleCloseAttempt} className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity" />
 
@@ -700,31 +878,230 @@ export const VehicleDrawer: React.FC<VehicleDrawerProps> = ({
                     )}
                   </div>
 
-                  {/* 3. Machine Model * */}
+                  {/* 2. Vehicle Type (Optional Filter for Machine Model) */}
                   <div className="space-y-1">
                     <label className="text-xs font-semibold text-slate-800 flex items-center">
-                      Machine Model <span className="text-red-500 ml-0.5">*</span>
-                      <InfoTooltip content="Searchable single-select from existing machine models. Mandatory. Example: Tata Signa 5530." />
+                      Vehicle Type
+                      <InfoTooltip content="Optional body classification filter that narrows active entries in Machine Model." />
                     </label>
-                    <input
-                      type="text"
-                      list="machine-models-list"
+                    <select
                       disabled={isReadOnly}
-                      placeholder="Select or enter machine model..."
-                      value={formData.machine_model || formData.model || ''}
-                      onChange={(e) => {
-                        updateField('machine_model', e.target.value);
-                        updateField('model', e.target.value);
-                      }}
-                      className={`w-full px-3 py-1.5 bg-white border rounded-lg text-xs text-slate-900 focus:outline-none ${
-                        fieldErrors.machine_model ? 'border-red-500 focus:border-red-500' : 'border-slate-300 focus:border-[#FA8A63]'
-                      } ${isReadOnly ? 'bg-slate-50 text-slate-500 cursor-not-allowed' : ''}`}
-                    />
-                    <datalist id="machine-models-list">
-                      {DEMO_LOOKUPS.machineModels.map((m) => (
-                        <option key={m} value={m} />
+                      value={modelTypeFilter}
+                      onChange={(e) =>
+                        handleModelFilterChange(e.target.value, modelSegmentFilter)
+                      }
+                      className={`w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:border-[#FA8A63] ${
+                        isReadOnly ? 'bg-slate-50 text-slate-500 cursor-not-allowed' : 'cursor-pointer'
+                      }`}
+                    >
+                      <option value="All">All Vehicle Types</option>
+                      {VEHICLE_TYPES.map((vt) => (
+                        <option key={vt} value={vt}>
+                          {vt}
+                        </option>
                       ))}
-                    </datalist>
+                    </select>
+                  </div>
+
+                  {/* 3. Machine Model * (Integrated with Vehicle Model Master) */}
+                  <div className="space-y-1 col-span-2" ref={machineModelDropdownRef}>
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold text-slate-800 flex items-center">
+                        Machine Model <span className="text-red-500 ml-0.5">*</span>
+                        <InfoTooltip content="Fetches active models from Admin → Setup → Vehicle Model Master. Selecting a model links vehicle_model_id and prefills specs." />
+                      </label>
+                      {selectedMasterModel && (
+                        <div className="flex items-center gap-1.5">
+                          <img
+                            src={selectedMasterModel.icons.poll.previewUrl}
+                            alt={selectedMasterModel.modelName}
+                            className="w-4 h-4 object-contain"
+                          />
+                          <span className="text-[10px] font-mono font-semibold text-slate-500">
+                            {selectedMasterModel.id}
+                          </span>
+                          {!selectedMasterModel.isActive && (
+                            <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[9px] font-bold">
+                              Inactive (Preserved)
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {isReadOnly ? (
+                      <div className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 flex items-center justify-between">
+                        <span>{formData.machine_model || formData.model || '—'}</span>
+                        {selectedMasterModel && (
+                          <span className="text-[10px] text-slate-500">
+                            {selectedMasterModel.vehicleType} · {selectedMasterModel.vehicleSegment}
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setMachineModelMenuOpen((prev) => !prev)}
+                          className={`w-full min-h-[34px] px-3 py-1.5 bg-white border rounded-lg text-xs flex items-center justify-between gap-2 focus:outline-none cursor-pointer ${
+                            fieldErrors.machine_model
+                              ? 'border-red-500'
+                              : 'border-slate-300 hover:border-slate-400 focus:border-[#FA8A63]'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            {selectedMasterModel && (
+                              <img
+                                src={selectedMasterModel.icons.poll.previewUrl}
+                                alt=""
+                                className="w-5 h-5 object-contain shrink-0"
+                              />
+                            )}
+                            <span
+                              className={
+                                formData.machine_model || formData.model
+                                  ? 'text-slate-900 font-medium truncate'
+                                  : 'text-slate-400'
+                              }
+                            >
+                              {formData.machine_model ||
+                                formData.model ||
+                                '-- Select Machine Model from Vehicle Model Master --'}
+                            </span>
+                          </div>
+                          <ChevronDown
+                            className={`w-4 h-4 text-slate-400 shrink-0 transition-transform ${
+                              machineModelMenuOpen ? 'rotate-180' : ''
+                            }`}
+                          />
+                        </button>
+
+                        {machineModelMenuOpen && (
+                          <div className="absolute left-0 right-0 mt-1 rounded-xl border border-slate-200 bg-white shadow-xl z-50 overflow-hidden">
+                            {/* Search + Segment filter strip */}
+                            <div className="p-2 border-b border-slate-100 bg-slate-50/80 flex items-center gap-2">
+                              <div className="relative flex-1">
+                                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                                <input
+                                  type="text"
+                                  autoFocus
+                                  value={machineModelSearch}
+                                  onChange={(e) => setMachineModelSearch(e.target.value)}
+                                  placeholder="Search by manufacturer, model name, variant, ID..."
+                                  className="w-full h-7 pl-8 pr-2 rounded-md border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:border-[#FA8A63]"
+                                />
+                              </div>
+                              <select
+                                value={modelSegmentFilter}
+                                onChange={(e) =>
+                                  handleModelFilterChange(
+                                    modelTypeFilter,
+                                    e.target.value
+                                  )
+                                }
+                                className="h-7 px-2 rounded-md border border-slate-200 bg-white text-[11px] font-medium text-slate-700 focus:outline-none focus:border-[#FA8A63]"
+                              >
+                                <option value="All">All Segments</option>
+                                {ALL_VEHICLE_SEGMENTS.map((seg) => (
+                                  <option key={seg} value={seg}>
+                                    {seg}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div className="max-h-60 overflow-y-auto p-1.5 space-y-1">
+                              {selectedMasterModel && !selectedMasterModel.isActive && (
+                                <div className="px-2.5 py-2 rounded-lg bg-amber-50 border border-amber-200 text-[11px] text-amber-900 mb-1">
+                                  <div className="font-bold">
+                                    Preserved Inactive Model: {formatVehicleModelLabel(selectedMasterModel)}
+                                  </div>
+                                  <div>
+                                    This model was deactivated in Vehicle Model Master. Keep as-is or choose an active replacement below.
+                                  </div>
+                                </div>
+                              )}
+
+                              {filteredActiveModels.length === 0 ? (
+                                <div className="py-6 px-4 text-center space-y-1">
+                                  <div className="text-xs font-bold text-slate-700">
+                                    No vehicle models found
+                                  </div>
+                                  <p className="text-[11px] text-slate-500">
+                                    No active models match your current filter/search. Configure models in{' '}
+                                    <span className="font-semibold text-[#FA8A63]">
+                                      Admin → Setup → Vehicle Model Master
+                                    </span>.
+                                  </p>
+                                </div>
+                              ) : (
+                                filteredActiveModels.map((m) => {
+                                  const isSelected =
+                                    formData.vehicle_model_id === m.id ||
+                                    (!formData.vehicle_model_id &&
+                                      (formData.machine_model || '').toLowerCase() ===
+                                        formatVehicleModelLabel(m).toLowerCase());
+                                  return (
+                                    <button
+                                      key={m.id}
+                                      type="button"
+                                      onClick={() => handleSelectVehicleModel(m)}
+                                      className={`w-full flex items-center justify-between gap-2.5 px-2.5 py-2 rounded-lg text-left transition-colors cursor-pointer ${
+                                        isSelected
+                                          ? 'bg-[#FFF3EE] text-[#B85324] border border-[#FA8A63]/40'
+                                          : 'hover:bg-slate-50 text-slate-800'
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-2.5 min-w-0">
+                                        <div className="w-7 h-7 rounded-md border border-slate-200 bg-white p-0.5 shrink-0 flex items-center justify-center">
+                                          <img
+                                            src={m.icons.poll.previewUrl}
+                                            alt={m.modelName}
+                                            className="w-full h-full object-contain"
+                                          />
+                                        </div>
+                                        <div className="min-w-0">
+                                          <div className="text-xs font-semibold truncate">
+                                            {formatVehicleModelLabel(m)}
+                                          </div>
+                                          <div className="text-[10px] text-slate-500 flex items-center gap-1.5">
+                                            <span className="font-mono">{m.id}</span>
+                                            <span>·</span>
+                                            <span>{m.vehicleType}</span>
+                                            <span>·</span>
+                                            <span>{m.vehicleSegment}</span>
+                                            {m.fuelType && (
+                                              <>
+                                                <span>·</span>
+                                                <span>{m.fuelType}</span>
+                                              </>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+                                      {isSelected && (
+                                        <Check className="w-4 h-4 text-[#FA8A63] shrink-0" />
+                                      )}
+                                    </button>
+                                  );
+                                })
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {modelCompatibilityNotice && (
+                      <p className="text-[10px] text-amber-700 font-semibold bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                        {modelCompatibilityNotice}
+                      </p>
+                    )}
+                    {prefilledFromModelNotice && !modelCompatibilityNotice && (
+                      <p className="text-[10px] text-emerald-700 font-medium">
+                        {prefilledFromModelNotice}
+                      </p>
+                    )}
                     {fieldErrors.machine_model && (
                       <p className="text-[10px] text-red-500 font-semibold">{fieldErrors.machine_model}</p>
                     )}

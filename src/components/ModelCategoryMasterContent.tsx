@@ -27,7 +27,10 @@ import {
   Info,
   Check,
   FileDown,
+  Power,
 } from 'lucide-react';
+import { RowActionMenu } from './common/RowActionMenu';
+import { DeleteConfirmationModal } from './common/DeleteConfirmationModal';
 import {
   MainCategory,
   ModelCategoryRecord,
@@ -1385,7 +1388,7 @@ export const ModelCategoryMasterContent: React.FC = () => {
                     </th>
                   )}
 
-                  <th className="px-4 py-3 text-right font-semibold text-slate-700 sticky right-0 bg-slate-50/95 border-l border-slate-200/80 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] whitespace-nowrap min-w-[140px] z-10">
+                  <th className="px-3 py-3 text-right font-semibold text-slate-700 sticky right-0 bg-slate-50/95 border-l border-slate-200/80 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] whitespace-nowrap w-[76px] z-10">
                     <div className="flex items-center justify-end gap-1">
                       <span>Actions</span>
                       <InfoTip text={MODEL_CATEGORY_TOOLTIPS.actions} align="right" />
@@ -1529,44 +1532,43 @@ export const ModelCategoryMasterContent: React.FC = () => {
                         </td>
                       )}
 
-                      <td className="px-4 py-3 text-right sticky right-0 bg-white/95 group-hover:bg-slate-50/95 border-l border-slate-100 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenViewOrEdit(rec, 'view')}
-                            title="View details"
-                            className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenViewOrEdit(rec, 'edit')}
-                            title="Edit type definition"
-                            className="p-1 rounded text-slate-400 hover:text-[#FA8A63] hover:bg-slate-100 cursor-pointer"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setRecordToDelete(rec)}
-                            title="Delete type"
-                            className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleToggleStatus(rec)}
-                            title={rec.status === 'Active' ? 'Mark Inactive' : 'Activate type'}
-                            className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border cursor-pointer ${
-                              rec.status === 'Active'
-                                ? 'text-amber-700 border-amber-200 bg-amber-50 hover:bg-amber-100'
-                                : 'text-emerald-700 border-emerald-200 bg-emerald-50 hover:bg-emerald-100'
-                            }`}
-                          >
-                            {rec.status === 'Active' ? 'Deactivate' : 'Activate'}
-                          </button>
+                      <td
+                        className="px-3 py-3 text-right sticky right-0 bg-white/95 group-hover:bg-slate-50/95 border-l border-slate-100 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] whitespace-nowrap"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="flex items-center justify-end">
+                          <RowActionMenu
+                            ariaLabel={`Actions for ${rec.typeName}`}
+                            items={[
+                              {
+                                id: 'view',
+                                label: 'View details',
+                                icon: <Eye className="w-3.5 h-3.5 text-slate-400" />,
+                                onClick: () => handleOpenViewOrEdit(rec, 'view'),
+                              },
+                              {
+                                id: 'edit',
+                                label: 'Edit type definition',
+                                icon: <Edit2 className="w-3.5 h-3.5 text-slate-400" />,
+                                onClick: () => handleOpenViewOrEdit(rec, 'edit'),
+                              },
+                              {
+                                id: 'toggle-status',
+                                label: rec.status === 'Active' ? 'Deactivate' : 'Activate',
+                                icon: <Power className="w-3.5 h-3.5" />,
+                                tone: rec.status === 'Active' ? 'warning' : 'accent',
+                                onClick: () => handleToggleStatus(rec),
+                              },
+                              {
+                                id: 'delete',
+                                label: 'Delete type',
+                                icon: <Trash2 className="w-3.5 h-3.5" />,
+                                tone: 'danger',
+                                dividerBefore: true,
+                                onClick: () => setRecordToDelete(rec),
+                              },
+                            ]}
+                          />
                         </div>
                       </td>
                     </tr>
@@ -3307,40 +3309,78 @@ export const ModelCategoryMasterContent: React.FC = () => {
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
-      {recordToDelete && (
-        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 shrink-0">
-                <Trash2 size={20} />
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-slate-900">Delete Type Definition?</h4>
-                <p className="text-xs text-slate-600 mt-1">
-                  Are you sure you want to delete <strong className="text-slate-900 font-semibold">{recordToDelete.typeName}</strong> ({recordToDelete.category})? This will permanently remove this model type from the catalog.
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setRecordToDelete(null)}
-                className="px-3.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmDelete}
-                className="px-3.5 py-1.5 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg shadow-sm cursor-pointer"
-              >
-                Delete Type
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Delete Confirmation Modal with Confirmation Chips */}
+      <DeleteConfirmationModal
+        isOpen={Boolean(recordToDelete)}
+        title="Delete Type Definition?"
+        description={
+          recordToDelete ? (
+            <>
+              Are you sure you want to delete{' '}
+              <strong className="text-slate-900 font-semibold">{recordToDelete.typeName}</strong>?
+              This will permanently remove this model type definition from the catalog.
+            </>
+          ) : (
+            ''
+          )
+        }
+        confirmLabel="Delete Type"
+        targetChips={
+          recordToDelete
+            ? [
+                {
+                  id: 'type',
+                  label: recordToDelete.typeName,
+                  tone: 'orange',
+                },
+                {
+                  id: 'cat',
+                  label: recordToDelete.category,
+                  tone:
+                    recordToDelete.category === 'Device'
+                      ? 'blue'
+                      : recordToDelete.category === 'Sensor'
+                      ? 'purple'
+                      : 'slate',
+                },
+                ...(recordToDelete.manufacturer || recordToDelete.modelReference
+                  ? [
+                      {
+                        id: 'ref',
+                        label: [recordToDelete.manufacturer, recordToDelete.modelReference]
+                          .filter(Boolean)
+                          .join(' · '),
+                        tone: 'slate' as const,
+                      },
+                    ]
+                  : []),
+                {
+                  id: 'status',
+                  label: recordToDelete.status,
+                  tone: recordToDelete.status === 'Active' ? 'emerald' : 'slate',
+                },
+              ]
+            : []
+        }
+        confirmationChips={
+          recordToDelete
+            ? [
+                {
+                  id: 'catalog-check',
+                  label: 'Catalog Definition Removal',
+                  tone: 'amber',
+                },
+                {
+                  id: 'hardware-safe',
+                  label: 'Registered Inventory Unchanged',
+                  tone: 'emerald',
+                },
+              ]
+            : []
+        }
+        onCancel={() => setRecordToDelete(null)}
+        onConfirm={handleConfirmDelete}
+      />
     </div>
   );
 };

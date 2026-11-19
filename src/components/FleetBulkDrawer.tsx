@@ -268,6 +268,23 @@ export const FleetBulkDrawer: React.FC<FleetBulkDrawerProps> = ({
               </div>
             </div>
 
+            <div className="flex flex-wrap gap-1.5">
+              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border border-slate-200 bg-slate-100 text-slate-700">
+                {selectedFleets.length} Selected
+              </span>
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold border border-emerald-200 bg-emerald-50 text-emerald-700">
+                <CheckCircle2 size={12} /> {eligibleFleets.length} Will Delete
+              </span>
+              {blockedFleets.length > 0 && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold border border-amber-200 bg-amber-50 text-amber-800">
+                  <AlertTriangle size={12} /> {blockedFleets.length} Skipped (Has Members / Child)
+                </span>
+              )}
+              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border border-sky-200 bg-sky-50 text-sky-700">
+                Master Drivers & Vehicles Safe
+              </span>
+            </div>
+
             <div className="space-y-2">
               <div className="flex items-center justify-between text-[11px] font-bold text-slate-500 px-1">
                 <span>Fleet Record</span>

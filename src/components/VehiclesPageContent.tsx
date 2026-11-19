@@ -39,6 +39,8 @@ import { ExportModal } from './ExportModal';
 import { VehicleDrawer } from './VehicleDrawer';
 import { ContextualDetailModal } from './ContextualDetailModal';
 import { ColumnCataloguePopover } from './ColumnCataloguePopover';
+import { RowActionMenu } from './common/RowActionMenu';
+import { DeleteConfirmationModal } from './common/DeleteConfirmationModal';
 
 interface VehiclesPageContentProps {
   companyContext?: string;
@@ -175,9 +177,6 @@ export const VehiclesPageContent: React.FC<VehiclesPageContentProps> = ({ compan
     vehicle: Vehicle | null;
     targetView: 'maintenance' | 'settings' | 'relationships';
   }>({ isOpen: false, vehicle: null, targetView: 'maintenance' });
-
-  // Active Row Context Menu
-  const [activeRowMenuId, setActiveRowMenuId] = useState<string | null>(null);
 
   // Toast Feedback State
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -527,6 +526,7 @@ export const VehiclesPageContent: React.FC<VehiclesPageContentProps> = ({ compan
     // SPECIFICATIONS & IDENTITY
     { key: 'transporter', label: 'Transporter', category: 'SPECIFICATIONS' },
     { key: 'client', label: 'Client Name', category: 'SPECIFICATIONS' },
+    { key: 'vehicle_segment', label: 'Vehicle Segment', category: 'SPECIFICATIONS' },
     { key: 'engine_number', label: 'Engine No.', category: 'SPECIFICATIONS' },
     { key: 'registration_date', label: 'Registration Date', category: 'SPECIFICATIONS' },
     { key: 'machine_owner', label: 'Machine Owner', category: 'SPECIFICATIONS' },
@@ -539,19 +539,23 @@ export const VehiclesPageContent: React.FC<VehiclesPageContentProps> = ({ compan
     // OPERATIONAL SETTINGS
     { key: 'zone', label: 'Zone', category: 'OPERATIONAL SETTINGS' },
     { key: 'location', label: 'Location', category: 'OPERATIONAL SETTINGS' },
+    { key: 'mobile_number', label: 'Vehicle Mobile No.', category: 'OPERATIONAL SETTINGS' },
     { key: 'fuel_tank_capacity', label: 'Fuel Tank Capacity', category: 'OPERATIONAL SETTINGS' },
-    { key: 'overspeed_limit', label: 'Over Speed Limit', category: 'OPERATIONAL SETTINGS' },
+    { key: 'fuel_calibration_type', label: 'Fuel Calibration', category: 'OPERATIONAL SETTINGS' },
+    { key: 'overspeed_limit', label: 'Overspeed Limit', category: 'OPERATIONAL SETTINGS' },
     { key: 'odometer', label: 'Odometer', category: 'OPERATIONAL SETTINGS' },
     { key: 'online', label: 'Telematics Online', category: 'OPERATIONAL SETTINGS' },
     { key: 'fleets', label: 'Fleet', category: 'OPERATIONAL SETTINGS' },
     { key: 'skills', label: 'Vehicle Skills', category: 'OPERATIONAL SETTINGS' },
 
     // INSURANCE & COMPLIANCE
+    { key: 'purchase_date', label: 'Purchase Date', category: 'COMPLIANCE & DOCUMENTS' },
     { key: 'warranty_to', label: 'Warranty To', category: 'COMPLIANCE & DOCUMENTS' },
     { key: 'insurance_company', label: 'Insurance Company', category: 'COMPLIANCE & DOCUMENTS' },
+    { key: 'insurance_from', label: 'Insurance Valid From', category: 'COMPLIANCE & DOCUMENTS' },
     { key: 'policy_number', label: 'Policy No.', category: 'COMPLIANCE & DOCUMENTS' },
     { key: 'aadhar_number', label: 'Aadhar Number', category: 'COMPLIANCE & DOCUMENTS' },
-    { key: 'company', label: 'Company Context', category: 'COMPLIANCE & DOCUMENTS' }
+    { key: 'company', label: 'Company', category: 'COMPLIANCE & DOCUMENTS' }
   ];
 
   // State for pinned columns (pinned to the left)
@@ -1176,6 +1180,12 @@ export const VehiclesPageContent: React.FC<VehiclesPageContentProps> = ({ compan
                     </th>
                   )}
 
+                  {visibleColumns.includes('vehicle_segment') && (
+                    <th className="px-4 py-3 font-bold text-slate-700 border-r border-slate-100 whitespace-nowrap">
+                      Vehicle Segment
+                    </th>
+                  )}
+
                   {visibleColumns.includes('zone') && (
                     <th className="px-4 py-3 font-bold text-slate-700 border-r border-slate-100 whitespace-nowrap">
                       Zone
@@ -1188,15 +1198,33 @@ export const VehiclesPageContent: React.FC<VehiclesPageContentProps> = ({ compan
                     </th>
                   )}
 
+                  {visibleColumns.includes('mobile_number') && (
+                    <th className="px-4 py-3 font-bold text-slate-700 border-r border-slate-100 whitespace-nowrap">
+                      Vehicle Mobile No.
+                    </th>
+                  )}
+
                   {visibleColumns.includes('fuel_tank_capacity') && (
                     <th className="px-4 py-3 font-bold text-slate-700 border-r border-slate-100 whitespace-nowrap">
                       Fuel Tank Capacity
                     </th>
                   )}
 
+                  {visibleColumns.includes('fuel_calibration_type') && (
+                    <th className="px-4 py-3 font-bold text-slate-700 border-r border-slate-100 whitespace-nowrap">
+                      Fuel Calibration
+                    </th>
+                  )}
+
                   {visibleColumns.includes('overspeed_limit') && (
                     <th className="px-4 py-3 font-bold text-slate-700 border-r border-slate-100 whitespace-nowrap">
-                      Over Speed Limit
+                      Overspeed Limit
+                    </th>
+                  )}
+
+                  {visibleColumns.includes('purchase_date') && (
+                    <th className="px-4 py-3 font-bold text-slate-700 border-r border-slate-100 whitespace-nowrap">
+                      Purchase Date
                     </th>
                   )}
 
@@ -1209,6 +1237,12 @@ export const VehiclesPageContent: React.FC<VehiclesPageContentProps> = ({ compan
                   {visibleColumns.includes('insurance_company') && (
                     <th className="px-4 py-3 font-bold text-slate-700 border-r border-slate-100 whitespace-nowrap">
                       Insurance Company
+                    </th>
+                  )}
+
+                  {visibleColumns.includes('insurance_from') && (
+                    <th className="px-4 py-3 font-bold text-slate-700 border-r border-slate-100 whitespace-nowrap">
+                      Insurance Valid From
                     </th>
                   )}
 
@@ -1241,7 +1275,7 @@ export const VehiclesPageContent: React.FC<VehiclesPageContentProps> = ({ compan
 
                   {visibleColumns.includes('class') && (
                     <th className="px-4 py-3 font-bold text-slate-700 border-r border-slate-100 whitespace-nowrap">
-                      Asset Type
+                      Asset Type / Class
                     </th>
                   )}
 
@@ -1265,7 +1299,7 @@ export const VehiclesPageContent: React.FC<VehiclesPageContentProps> = ({ compan
 
                   {visibleColumns.includes('online') && (
                     <th className="px-4 py-3 font-bold text-slate-700 border-r border-slate-100 whitespace-nowrap">
-                      Online Status
+                      Telematics Online
                     </th>
                   )}
 
@@ -1297,7 +1331,6 @@ export const VehiclesPageContent: React.FC<VehiclesPageContentProps> = ({ compan
               <tbody className="divide-y divide-slate-100 bg-white">
                 {paginatedVehicles.map((vehicle) => {
                   const isSelected = selectedIds.has(vehicle.id);
-                  const isMenuOpen = activeRowMenuId === vehicle.id;
 
                   return (
                     <tr
@@ -1428,6 +1461,12 @@ export const VehiclesPageContent: React.FC<VehiclesPageContentProps> = ({ compan
                         </td>
                       )}
 
+                      {visibleColumns.includes('vehicle_segment') && (
+                        <td className="px-4 py-3 text-slate-700 whitespace-nowrap">
+                          {vehicle.vehicle_segment || '—'}
+                        </td>
+                      )}
+
                       {visibleColumns.includes('zone') && (
                         <td className="px-4 py-3 text-slate-700 whitespace-nowrap">
                           {vehicle.zone || '—'}
@@ -1440,15 +1479,33 @@ export const VehiclesPageContent: React.FC<VehiclesPageContentProps> = ({ compan
                         </td>
                       )}
 
+                      {visibleColumns.includes('mobile_number') && (
+                        <td className="px-4 py-3 text-slate-600 font-mono text-[11px] whitespace-nowrap">
+                          {vehicle.mobile_number || '—'}
+                        </td>
+                      )}
+
                       {visibleColumns.includes('fuel_tank_capacity') && (
                         <td className="px-4 py-3 text-slate-600 font-mono text-[11px] whitespace-nowrap">
                           {vehicle.fuel_tank_capacity ? `${vehicle.fuel_tank_capacity} L` : '—'}
                         </td>
                       )}
 
+                      {visibleColumns.includes('fuel_calibration_type') && (
+                        <td className="px-4 py-3 text-slate-700 whitespace-nowrap">
+                          {vehicle.fuel_calibration_type || '—'}
+                        </td>
+                      )}
+
                       {visibleColumns.includes('overspeed_limit') && (
                         <td className="px-4 py-3 text-slate-600 font-mono text-[11px] whitespace-nowrap">
                           {vehicle.overspeed_limit ? `${vehicle.overspeed_limit} km/h` : '—'}
+                        </td>
+                      )}
+
+                      {visibleColumns.includes('purchase_date') && (
+                        <td className="px-4 py-3 text-slate-600 font-mono text-[11px] whitespace-nowrap">
+                          {vehicle.purchase_date || '—'}
                         </td>
                       )}
 
@@ -1461,6 +1518,12 @@ export const VehiclesPageContent: React.FC<VehiclesPageContentProps> = ({ compan
                       {visibleColumns.includes('insurance_company') && (
                         <td className="px-4 py-3 text-slate-700 whitespace-nowrap">
                           {vehicle.insurance_company || '—'}
+                        </td>
+                      )}
+
+                      {visibleColumns.includes('insurance_from') && (
+                        <td className="px-4 py-3 text-slate-600 font-mono text-[11px] whitespace-nowrap">
+                          {vehicle.insurance_from || '—'}
                         </td>
                       )}
 
@@ -1566,95 +1629,59 @@ export const VehiclesPageContent: React.FC<VehiclesPageContentProps> = ({ compan
 
                       {/* Fixed Right Actions Cell */}
                       <td className="sticky right-0 z-10 bg-white/95 group-hover:bg-slate-50/95 px-3 py-3 border-l border-slate-100 text-right whitespace-nowrap">
-                        <div className="inline-flex items-center justify-end gap-1 relative">
-                          <button
-                            type="button"
-                            onClick={() => setVehicleDrawerState({ isOpen: true, mode: 'view', vehicle })}
-                            title="View details"
-                            className="p-1.5 rounded hover:bg-[#f1f5f9] text-[#5c6b7a] hover:text-[#17212b] cursor-pointer"
-                          >
-                            <Eye size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setVehicleDrawerState({ isOpen: true, mode: 'edit', vehicle })}
-                            title="Edit vehicle"
-                            className="p-1.5 rounded hover:bg-[#f1f5f9] text-[#5c6b7a] hover:text-[#FA8A63] cursor-pointer"
-                          >
-                            <Edit2 size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setVehicleToDelete(vehicle)}
-                            title="Delete vehicle"
-                            className="p-1.5 rounded hover:bg-rose-50 text-[#5c6b7a] hover:text-rose-600 cursor-pointer"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setActiveRowMenuId(isMenuOpen ? null : vehicle.id)}
-                            title="More actions"
-                            className="p-1.5 rounded hover:bg-[#f1f5f9] text-[#5c6b7a] hover:text-[#17212b] cursor-pointer"
-                          >
-                            <MoreVertical size={14} />
-                          </button>
-
-                          {/* Kebab dropdown with Relationships, Routes & Allocations, Change status, Delete */}
-                          {isMenuOpen && (
-                            <div className="absolute right-0 top-8 w-52 bg-white rounded-xl shadow-2xl border border-slate-200 py-1.5 z-40 text-left animate-in fade-in zoom-in-95 duration-100">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setContextualModalState({ isOpen: true, vehicle, targetView: 'relationships' });
-                                  setActiveRowMenuId(null);
-                                }}
-                                className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
-                              >
-                                <Truck size={13} />
-                                <span>Relationships</span>
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setVehicleDrawerState({ isOpen: true, mode: 'edit', vehicle });
-                                  setActiveRowMenuId(null);
-                                }}
-                                className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
-                              >
-                                <Radio size={13} />
-                                <span>Routes & Allocations</span>
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => {
+                        <div className="inline-flex items-center justify-end">
+                          <RowActionMenu
+                            ariaLabel={`Actions for ${vehicle.registration_number}`}
+                            items={[
+                              {
+                                id: 'view',
+                                label: 'View details',
+                                icon: <Eye size={13} className="text-slate-400" />,
+                                onClick: () => setVehicleDrawerState({ isOpen: true, mode: 'view', vehicle }),
+                              },
+                              {
+                                id: 'edit',
+                                label: 'Edit vehicle',
+                                icon: <Edit2 size={13} className="text-slate-400" />,
+                                onClick: () => setVehicleDrawerState({ isOpen: true, mode: 'edit', vehicle }),
+                              },
+                              {
+                                id: 'relationships',
+                                label: 'Relationships',
+                                icon: <Truck size={13} className="text-slate-400" />,
+                                onClick: () =>
+                                  setContextualModalState({
+                                    isOpen: true,
+                                    vehicle,
+                                    targetView: 'relationships',
+                                  }),
+                              },
+                              {
+                                id: 'routes',
+                                label: 'Routes & Allocations',
+                                icon: <Radio size={13} className="text-slate-400" />,
+                                onClick: () => setVehicleDrawerState({ isOpen: true, mode: 'edit', vehicle }),
+                              },
+                              {
+                                id: 'status',
+                                label: 'Change status',
+                                icon: <Tag size={13} className="text-[#FA8A63]" />,
+                                tone: 'accent',
+                                onClick: () => {
                                   setSelectedIds(new Set([vehicle.id]));
                                   setIsBulkOpen(true);
-                                  setActiveRowMenuId(null);
-                                }}
-                                className="w-full px-3 py-1.5 text-xs text-[#FA8A63] hover:bg-orange-50 font-semibold flex items-center gap-2 cursor-pointer"
-                              >
-                                <Tag size={13} />
-                                <span>Change status</span>
-                              </button>
-
-                              <div className="border-t border-slate-100 my-1" />
-
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setActiveRowMenuId(null);
-                                  setVehicleToDelete(vehicle);
-                                }}
-                                className="w-full px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50 font-medium flex items-center gap-2 cursor-pointer"
-                              >
-                                <Trash2 size={13} />
-                                <span>Delete vehicle</span>
-                              </button>
-                            </div>
-                          )}
+                                },
+                              },
+                              {
+                                id: 'delete',
+                                label: 'Delete vehicle',
+                                icon: <Trash2 size={13} />,
+                                tone: 'danger',
+                                dividerBefore: true,
+                                onClick: () => setVehicleToDelete(vehicle),
+                              },
+                            ]}
+                          />
                         </div>
                       </td>
                     </tr>
@@ -1866,40 +1893,78 @@ export const VehiclesPageContent: React.FC<VehiclesPageContentProps> = ({ compan
         targetView={contextualModalState.targetView}
       />
 
-      {/* Delete Vehicle Confirmation Modal */}
-      {vehicleToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 shrink-0">
-                <Trash2 size={20} />
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-slate-900">Delete Vehicle?</h4>
-                <p className="text-xs text-slate-600 mt-1">
-                  Are you sure you want to delete vehicle <strong className="text-slate-900 font-semibold">{vehicleToDelete.registration_number}</strong> ({vehicleToDelete.make} {vehicleToDelete.model})? Master vehicle records and telemetry mappings will be unlinked.
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setVehicleToDelete(null)}
-                className="px-3.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmDeleteVehicle}
-                className="px-3.5 py-1.5 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg shadow-sm cursor-pointer"
-              >
-                Delete Vehicle
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Delete Vehicle Confirmation Modal with Confirmation Chips */}
+      <DeleteConfirmationModal
+        isOpen={Boolean(vehicleToDelete)}
+        title="Delete Vehicle?"
+        description={
+          vehicleToDelete ? (
+            <>
+              Are you sure you want to delete vehicle{' '}
+              <strong className="text-slate-900 font-semibold">
+                {vehicleToDelete.registration_number}
+              </strong>{' '}
+              ({vehicleToDelete.make} {vehicleToDelete.model})? Master vehicle records and
+              telemetry mappings will be unlinked.
+            </>
+          ) : (
+            ''
+          )
+        }
+        confirmLabel="Delete Vehicle"
+        targetChips={
+          vehicleToDelete
+            ? [
+                {
+                  id: 'reg',
+                  label: vehicleToDelete.registration_number,
+                  tone: 'orange',
+                },
+                {
+                  id: 'make-model',
+                  label: `${vehicleToDelete.make} · ${vehicleToDelete.machine_model || vehicleToDelete.model}`,
+                  tone: 'blue',
+                },
+                ...(vehicleToDelete.client || vehicleToDelete.company
+                  ? [
+                      {
+                        id: 'org',
+                        label: vehicleToDelete.client || vehicleToDelete.company || '',
+                        tone: 'purple' as const,
+                      },
+                    ]
+                  : []),
+                {
+                  id: 'status',
+                  label: vehicleToDelete.status,
+                  tone:
+                    vehicleToDelete.status === 'Available' ||
+                    vehicleToDelete.status === 'In Use'
+                      ? 'emerald'
+                      : 'slate',
+                },
+              ]
+            : []
+        }
+        confirmationChips={
+          vehicleToDelete
+            ? [
+                {
+                  id: 'telemetry',
+                  label: 'Telemetry Mappings Unlinked',
+                  tone: 'amber',
+                },
+                {
+                  id: 'scope',
+                  label: 'Permanent Master Record Delete',
+                  tone: 'rose',
+                },
+              ]
+            : []
+        }
+        onCancel={() => setVehicleToDelete(null)}
+        onConfirm={handleConfirmDeleteVehicle}
+      />
     </div>
   );
 };

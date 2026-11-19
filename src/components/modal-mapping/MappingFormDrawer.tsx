@@ -55,6 +55,8 @@ import {
   HardwareCompositionSaveResult
 } from './HardwareCompositionModal';
 import { ResourceRelationshipsPanel } from './ResourceRelationshipsPanel';
+import { VehicleDrawer } from '../VehicleDrawer';
+import { DriverDrawer } from '../DriverDrawer';
 
 interface MappingFormDrawerProps {
   mode: 'create' | 'edit';
@@ -252,15 +254,7 @@ export const MappingFormDrawer: React.FC<MappingFormDrawerProps> = ({
 
   const [qcResType, setQcResType] = useState<null | 'Vehicle' | 'Driver'>(null);
   const [qcVehReg, setQcVehReg] = useState('');
-  const [qcVehModel, setQcVehModel] = useState('Tata Prima 5530');
-  const [qcVehFuel, setQcVehFuel] = useState('Diesel');
-  const [qcVehTransporter, setQcVehTransporter] = useState('Western Logistics');
-  const [qcVehStatus, setQcVehStatus] = useState<'Available' | 'In Use' | 'Reserved' | 'Maintenance'>('Available');
-  const [qcDrvName, setQcDrvName] = useState('');
   const [qcDrvPhone, setQcDrvPhone] = useState('');
-  const [qcDrvLicence, setQcDrvLicence] = useState('');
-  const [qcDrvLicenceType, setQcDrvLicenceType] = useState('HMV');
-  const [qcDrvTransporter, setQcDrvTransporter] = useState('Western Logistics');
 
   // Form Errors & Confirmation
   const [formError, setFormError] = useState<string | null>(null);
@@ -608,91 +602,49 @@ export const MappingFormDrawer: React.FC<MappingFormDrawerProps> = ({
     showToast(`Added ${resType} allocation (${pick.resourceIdentifier}).`);
   };
 
-  const handleInlineCreateVehicle = () => {
-    const reg = qcVehReg.trim().toUpperCase();
-    if (!reg) {
-      setFormError('Enter Vehicle Registration Number.');
-      return;
-    }
-    if (vehicles.some((v) => v.registration_number.toLowerCase() === reg.toLowerCase())) {
-      setFormError(`Vehicle ${reg} already exists in Vehicle Master.`);
-      return;
-    }
-    const nowIso = new Date().toISOString();
-    const newVeh: Vehicle = {
-      id: `veh-${Date.now()}`,
-      public_id: `VEH-${Date.now().toString().slice(-4)}`,
-      name: `${qcVehModel.trim() || 'Tata Prima 5530'} (${reg})`,
-      registration_number: reg,
-      machine_model: qcVehModel.trim() || 'Tata Prima 5530',
-      model: qcVehModel.trim() || 'Tata Prima 5530',
-      client: targetClient,
-      company: targetClient,
-      chassis_number: `MAT${Date.now().toString().slice(-10)}`,
-      vin: `MAT${Date.now().toString().slice(-10)}`,
-      transporter: qcVehTransporter.trim() || 'Western Logistics',
-      year: 2026,
-      fuel_type: qcVehFuel || 'Diesel',
-      insurance_to: '2027-11-12',
-      status: qcVehStatus,
-      location: site,
-      fleets: [],
-      created_at: nowIso,
-      updated_at: nowIso
+  const handleCreatedVehicle = (newVeh: Vehicle) => {
+    const vehicleRecord: Vehicle = {
+      ...newVeh,
+      company: newVeh.company || targetClient,
+      client: newVeh.client || targetClient
     };
-    const next = [newVeh, ...vehicles];
+    const next = [vehicleRecord, ...vehicles.filter((v) => v.id !== vehicleRecord.id)];
     setVehicles(next);
     saveVehicleMasterStore(next);
+    setResType('Vehicle');
     setSelectedResourcePick({
-      resourceId: newVeh.id,
-      resourceIdentifier: newVeh.registration_number,
-      resourceDisplayName: `${newVeh.machine_model} · ${newVeh.registration_number}`
+      resourceId: vehicleRecord.id,
+      resourceIdentifier: vehicleRecord.registration_number,
+      resourceDisplayName: `${vehicleRecord.machine_model || vehicleRecord.model || 'Vehicle'} · ${vehicleRecord.registration_number}`
     });
-    setResSearch(newVeh.registration_number);
+    setResSearch(vehicleRecord.registration_number);
     setResDropdownOpen(false);
     setQcResType(null);
     setQcVehReg('');
     setFormError(null);
-    showToast(`Vehicle ${reg} created in ${targetClient} Vehicle Master & selected.`);
+    showToast(`Vehicle ${vehicleRecord.registration_number} created in ${vehicleRecord.company} Master & selected.`);
   };
 
-  const handleInlineCreateDriver = () => {
-    const name = qcDrvName.trim();
-    const phone = qcDrvPhone.trim();
-    if (!name || !phone) {
-      setFormError('Driver Name and Contact Number are required.');
-      return;
-    }
-    const formattedPhone = phone.startsWith('+') ? phone : `+91 ${phone}`;
-    const newDrv: Driver = {
-      id: `drv-${Date.now()}`,
-      name,
-      phone: formattedPhone,
-      dob: '1990-01-01',
-      status: 'Active',
-      company: targetClient,
-      transporter: qcDrvTransporter.trim() || 'Western Logistics',
-      licence: qcDrvLicence.trim() || `DL-${Date.now().toString().slice(-8)}`,
-      licenceType: qcDrvLicenceType || 'HMV',
-      licenceFrom: '2020-01-01',
-      licenceTo: '2030-01-01'
+  const handleCreatedDriver = (newDrv: Driver) => {
+    const driverRecord: Driver = {
+      ...newDrv,
+      company: newDrv.company || targetClient
     };
-    const next = [newDrv, ...drivers];
+    const next = [driverRecord, ...drivers.filter((d) => d.id !== driverRecord.id)];
     setDrivers(next);
     saveDriverMasterStore(next);
+    setResType('Driver');
     setSelectedResourcePick({
-      resourceId: newDrv.id,
-      resourceIdentifier: formattedPhone,
-      resourceDisplayName: newDrv.name
+      resourceId: driverRecord.id,
+      resourceIdentifier: driverRecord.phone,
+      resourceDisplayName: driverRecord.name
     });
-    setResSearch(formattedPhone);
+    setResSearch(driverRecord.phone);
     setResDropdownOpen(false);
     setQcResType(null);
-    setQcDrvName('');
     setQcDrvPhone('');
-    setQcDrvLicence('');
     setFormError(null);
-    showToast(`Driver ${name} created in ${targetClient} Driver Master & selected.`);
+    showToast(`Driver ${driverRecord.name} created in ${driverRecord.company} Master & selected.`);
   };
 
   // Validation Checklist for Section 4 (Review & Submit)
@@ -1781,202 +1733,6 @@ export const MappingFormDrawer: React.FC<MappingFormDrawerProps> = ({
                 </div>
               </div>
 
-              {/* Inline Quick-Create Vehicle / Driver Form (Updates Master Directly) */}
-              {qcResType && (
-                <div className="p-3.5 rounded-xl border border-[#F26522]/40 bg-[#FFF9F6] space-y-3 text-[12px] shadow-xs">
-                  <div className="flex items-center justify-between border-b border-[#F26522]/15 pb-2">
-                    <div>
-                      <span className="font-bold text-slate-900 text-[12.5px]">
-                        Create New {qcResType} in {targetClient} Master
-                      </span>
-                      <div className="text-[10.5px] text-slate-500">
-                        Saves directly to Resources → {qcResType}s and selects it for allocation here.
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setQcResType(null)}
-                      className="text-slate-400 hover:text-slate-600 cursor-pointer p-1"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                  {qcResType === 'Vehicle' ? (
-                    <div className="space-y-2.5">
-                      <div className="grid grid-cols-3 gap-2.5">
-                        <div>
-                          <label className="block text-[10.5px] font-semibold text-slate-700 mb-1">
-                            Registration No. <span className="text-rose-600">*</span>
-                          </label>
-                          <input
-                            type="text"
-                            value={qcVehReg}
-                            onChange={(e) => setQcVehReg(e.target.value)}
-                            placeholder="e.g. GJ12XX9001"
-                            className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-white uppercase font-mono text-[11.5px] focus:outline-none focus:border-[#F26522]"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[10.5px] font-semibold text-slate-700 mb-1">
-                            Vehicle / Machine Model <span className="text-rose-600">*</span>
-                          </label>
-                          <input
-                            type="text"
-                            value={qcVehModel}
-                            onChange={(e) => setQcVehModel(e.target.value)}
-                            placeholder="e.g. Tata Prima 5530"
-                            className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-[11.5px] focus:outline-none focus:border-[#F26522]"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[10.5px] font-semibold text-slate-700 mb-1">
-                            Fuel Type
-                          </label>
-                          <select
-                            value={qcVehFuel}
-                            onChange={(e) => setQcVehFuel(e.target.value)}
-                            className="w-full h-8 px-2 rounded-lg border border-slate-200 bg-white text-[11.5px]"
-                          >
-                            {['Diesel', 'CNG', 'Electric', 'Petrol', 'LPG'].map((ft) => (
-                              <option key={ft} value={ft}>
-                                {ft}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-[10.5px] font-semibold text-slate-700 mb-1">
-                            Transporter
-                          </label>
-                          <input
-                            type="text"
-                            value={qcVehTransporter}
-                            onChange={(e) => setQcVehTransporter(e.target.value)}
-                            placeholder="e.g. Western Logistics"
-                            className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-[11.5px] focus:outline-none focus:border-[#F26522]"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[10.5px] font-semibold text-slate-700 mb-1">
-                            Status
-                          </label>
-                          <select
-                            value={qcVehStatus}
-                            onChange={(e) => setQcVehStatus(e.target.value as 'Available' | 'In Use' | 'Reserved' | 'Maintenance')}
-                            className="w-full h-8 px-2 rounded-lg border border-slate-200 bg-white text-[11.5px]"
-                          >
-                            <option value="Available">Available</option>
-                            <option value="In Use">In Use</option>
-                            <option value="Reserved">Reserved</option>
-                            <option value="Maintenance">Maintenance</option>
-                          </select>
-                        </div>
-                      </div>
-                      <div className="flex justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setQcResType(null)}
-                          className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-[11.5px] font-semibold cursor-pointer"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleInlineCreateVehicle}
-                          className="h-8 px-3.5 rounded-lg bg-[#F26522] hover:bg-[#d95417] text-white text-[11.5px] font-semibold cursor-pointer"
-                        >
-                          Save Vehicle &amp; Select
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-2.5">
-                      <div className="grid grid-cols-3 gap-2.5">
-                        <div>
-                          <label className="block text-[10.5px] font-semibold text-slate-700 mb-1">
-                            Driver Full Name <span className="text-rose-600">*</span>
-                          </label>
-                          <input
-                            type="text"
-                            value={qcDrvName}
-                            onChange={(e) => setQcDrvName(e.target.value)}
-                            placeholder="e.g. Rajesh Kumar"
-                            className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-[11.5px] focus:outline-none focus:border-[#F26522]"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[10.5px] font-semibold text-slate-700 mb-1">
-                            Contact No. <span className="text-rose-600">*</span>
-                          </label>
-                          <input
-                            type="text"
-                            value={qcDrvPhone}
-                            onChange={(e) => setQcDrvPhone(e.target.value)}
-                            placeholder="e.g. 9876543210"
-                            className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-white font-mono text-[11.5px] focus:outline-none focus:border-[#F26522]"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[10.5px] font-semibold text-slate-700 mb-1">
-                            Licence No.
-                          </label>
-                          <input
-                            type="text"
-                            value={qcDrvLicence}
-                            onChange={(e) => setQcDrvLicence(e.target.value)}
-                            placeholder="e.g. GJ1220210004512"
-                            className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-white font-mono text-[11.5px] focus:outline-none focus:border-[#F26522]"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[10.5px] font-semibold text-slate-700 mb-1">
-                            Licence Type
-                          </label>
-                          <select
-                            value={qcDrvLicenceType}
-                            onChange={(e) => setQcDrvLicenceType(e.target.value)}
-                            className="w-full h-8 px-2 rounded-lg border border-slate-200 bg-white text-[11.5px]"
-                          >
-                            {['HMV', 'HGMV', 'LMV', 'Transport'].map((lt) => (
-                              <option key={lt} value={lt}>
-                                {lt}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-[10.5px] font-semibold text-slate-700 mb-1">
-                            Transporter
-                          </label>
-                          <input
-                            type="text"
-                            value={qcDrvTransporter}
-                            onChange={(e) => setQcDrvTransporter(e.target.value)}
-                            placeholder="e.g. Western Logistics"
-                            className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-[11.5px] focus:outline-none focus:border-[#F26522]"
-                          />
-                        </div>
-                      </div>
-                      <div className="flex justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setQcResType(null)}
-                          className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-[11.5px] font-semibold cursor-pointer"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleInlineCreateDriver}
-                          className="h-8 px-3.5 rounded-lg bg-[#F26522] hover:bg-[#d95417] text-white text-[11.5px] font-semibold cursor-pointer"
-                        >
-                          Save Driver &amp; Select
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
 
             {/* Staged Resource Allocations Table */}
@@ -1991,7 +1747,7 @@ export const MappingFormDrawer: React.FC<MappingFormDrawerProps> = ({
                       <th className="px-3 py-2">Validity</th>
                       <th className="px-3 py-2">Effective Start</th>
                       <th className="px-3 py-2">Effective End</th>
-                      <th className="px-3 py-2 text-right">Remove</th>
+                      <th className="px-3 py-2 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -2286,6 +2042,28 @@ export const MappingFormDrawer: React.FC<MappingFormDrawerProps> = ({
           </div>
         </div>
       )}
+
+      {/* Full Vehicle / Driver Master Create Drawers (z-[110]) */}
+      <VehicleDrawer
+        isOpen={qcResType === 'Vehicle'}
+        onClose={() => setQcResType(null)}
+        mode="create"
+        initialVehicle={qcVehReg ? ({ registration_number: qcVehReg } as Vehicle) : null}
+        onSaveVehicle={handleCreatedVehicle}
+        existingVehicles={vehicles}
+        companyContext={targetClient}
+        zIndexClass="z-[110]"
+      />
+      <DriverDrawer
+        isOpen={qcResType === 'Driver'}
+        onClose={() => setQcResType(null)}
+        mode="create"
+        initialDriver={qcDrvPhone ? ({ phone: qcDrvPhone } as Driver) : null}
+        onSaveDriver={handleCreatedDriver}
+        existingDrivers={drivers}
+        companyContext={targetClient}
+        zIndexClass="z-[110]"
+      />
     </div>
   );
 };

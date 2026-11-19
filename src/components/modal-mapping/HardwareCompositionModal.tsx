@@ -31,6 +31,11 @@ import {
 } from '../../types/modalMaster';
 import { ModelCategoryRecord, getRecordIdentifierTypes } from '../../types/modelCategoryMaster';
 import { MappingInfoTooltip } from './ModalConnectionOverlays';
+import {
+  FullCreateDeviceDrawer,
+  FullCreateSensorDrawer,
+  FullCreateSimDrawer
+} from './QuickCreateHardwareDrawers';
 
 export interface BindingDefaults {
   mode: HardwareBindingMode;
@@ -152,18 +157,8 @@ export const HardwareCompositionModal: React.FC<HardwareCompositionModalProps> =
     isEditingBinding && editingBinding ? editingBinding.toHardwareId : ''
   );
 
-  // Inline registration form when identifier not found or user clicks Create & Register
+  // Full Create Device / Sensor / SIM Drawer overlay
   const [showRegisterInline, setShowRegisterInline] = useState(false);
-  const [regIdValue, setRegIdValue] = useState('');
-  const [regSerialValue, setRegSerialValue] = useState('');
-  const [regNameValue, setRegNameValue] = useState('');
-  const [regLocationValue, setRegLocationValue] = useState(site || 'Mundra CT2');
-  const [regLifecycle, setRegLifecycle] = useState<'Inventory' | 'Active'>('Inventory');
-  const [regSimOperator, setRegSimOperator] = useState('Airtel');
-  const [regSimMsisdn, setRegSimMsisdn] = useState('');
-  const [regSimFormFactor, setRegSimFormFactor] = useState<'Nano (4FF)' | 'Micro (3FF)' | 'Standard (2FF)' | 'eSIM'>('Nano (4FF)');
-  const [regSimPlan, setRegSimPlan] = useState('IoT Business 10GB');
-  const [regError, setRegError] = useState<string | null>(null);
   const [pendingRegisteredUnit, setPendingRegisteredUnit] = useState<{
     device?: DeviceRecord;
     sensor?: SensorRecord;
@@ -511,127 +506,39 @@ export const HardwareCompositionModal: React.FC<HardwareCompositionModalProps> =
     draftBindings
   ]);
 
-  // Inline quick register when identifier is missing
-  const handleInlineRegister = () => {
-    if (!activeModelDef) return;
-    const val = regIdValue.trim();
-    if (!val) {
-      setRegError(`Enter ${activeIdentifierLabel} to register.`);
-      return;
+  const handleCreatedDevice = (newDev: DeviceRecord) => {
+    setPendingRegisteredUnit({ device: newDev });
+    onQuickRegisterHardware?.({ device: newDev });
+    if (newDev.modelTypeId && categoryModels.some((m) => m.id === newDev.modelTypeId)) {
+      setSelectedModelId(newDev.modelTypeId);
     }
-
-    const dupDev = effectiveDevices.find(
-      (d) =>
-        d.imei.toLowerCase() === val.toLowerCase() ||
-        d.serial.toLowerCase() === val.toLowerCase() ||
-        d.deviceId.toLowerCase() === val.toLowerCase()
-    );
-    const dupSen = effectiveSensors.find(
-      (s) => s.deviceId.toLowerCase() === val.toLowerCase() || s.serial.toLowerCase() === val.toLowerCase()
-    );
-    const dupSim = effectiveSims.find((s) => s.iccid.toLowerCase() === val.toLowerCase());
-    if (dupDev || dupSen || dupSim) {
-      setRegError(`Identifier "${val}" already exists in the physical hardware registry.`);
-      return;
-    }
-
-    const nowDate = new Date().toISOString().slice(0, 10);
-    const hasId = (target: string) =>
-      activeIdentifierTypes.some((t) => t.toLowerCase() === target.toLowerCase());
-    const primaryId = activeIdentifierTypes[0] || activeModelDef.identifierType;
-
-    if (category === 'Device') {
-      const newDev: DeviceRecord = {
-        id: `dev-reg-${Date.now()}`,
-        deviceId: hasId('Device ID') ? val : `DEV-${Date.now().toString().slice(-4)}`,
-        name: regNameValue.trim() || `${activeModelDef.typeName} — ${activeModelDef.modelReference || val}`,
-        kind: activeModelDef.typeName,
-        role: 'gateway',
-        manufacturer: activeModelDef.manufacturer || 'Generic',
-        modelText: activeModelDef.modelReference || activeModelDef.typeName,
-        modelTypeId: activeModelDef.id,
-        identifierType: primaryId,
-        mode: 'Standard',
-        serial:
-          regSerialValue.trim() ||
-          (hasId('Serial Number') ? val : `SN-${val.slice(-6)}`),
-        imei: hasId('IMEI') ? val : '',
-        capabilities: activeModelDef.connectivity || ['Cellular'],
-        platformProtocol: 'MQTT',
-        company: targetClient,
-        inventoryLocation: regLocationValue.trim() || site || 'Mundra CT2',
-        hardwareLifecycle: regLifecycle,
-        registeredAt: nowDate,
-        updatedAt: nowDate,
-        channelCount: 2,
-        simSlots: activeModelDef.simSupported === 'Yes' ? 1 : 0,
-        supportedPorts:
-          activeModelDef.simSupported === 'Yes'
-            ? ['SIM Slot 1', 'BLE-1', 'BLE-2', 'RS485-1']
-            : ['ETH-1', 'CH-1'],
-        notes: 'Registered inline from Create Mapping'
-      };
-      setPendingRegisteredUnit({ device: newDev });
-      onQuickRegisterHardware?.({ device: newDev });
-      setSelectedHardwareId(newDev.id);
-    } else if (category === 'Sensor') {
-      const newSen: SensorRecord = {
-        id: `sen-reg-${Date.now()}`,
-        deviceId: val,
-        name: regNameValue.trim() || `${activeModelDef.typeName} — ${val}`,
-        kind: activeModelDef.typeName,
-        role: 'peripheral',
-        category: activeModelDef.typeName,
-        manufacturer: activeModelDef.manufacturer || 'Generic',
-        modelText: activeModelDef.modelReference || activeModelDef.typeName,
-        modelTypeId: activeModelDef.id,
-        identifierType: primaryId,
-        serial: regSerialValue.trim() || `SN-${val}`,
-        capabilities: ['BLE'],
-        measurementCapability: activeModelDef.measurementType || 'Temperature',
-        measurementUnit: activeModelDef.measurementUnit || '°C',
-        measurementRange: 'Standard',
-        company: targetClient,
-        inventoryLocation: regLocationValue.trim() || site || 'Mundra CT2',
-        hardwareLifecycle: regLifecycle,
-        registeredAt: nowDate,
-        updatedAt: nowDate,
-        notes: 'Registered inline from Create Mapping'
-      };
-      setPendingRegisteredUnit({ sensor: newSen });
-      onQuickRegisterHardware?.({ sensor: newSen });
-      setSelectedHardwareId(newSen.id);
-    } else {
-      const newSim: SimRecord = {
-        id: `SIM-${Date.now().toString().slice(-4)}`,
-        iccid: val,
-        msisdn: regSimMsisdn.trim(),
-        operator: regSimOperator || activeModelDef.manufacturer || 'Airtel',
-        plan: regSimPlan || 'IoT Business 10GB',
-        formFactor: regSimFormFactor || (activeModelDef.simFormFactor === 'eSIM' ? 'eSIM' : 'Nano (4FF)'),
-        network: '4G LTE',
-        owner: targetClient,
-        location: regLocationValue.trim() || site || 'Mundra CT2',
-        status: regLifecycle,
-        activationDate: regLifecycle === 'Active' ? nowDate : '',
-        renewalDate: '',
-        notes: 'Registered inline from Create Mapping',
-        category: activeModelDef.typeName,
-        modelTypeId: activeModelDef.id,
-        identifierType: primaryId || 'ICCID'
-      };
-      setPendingRegisteredUnit({ sim: newSim });
-      onQuickRegisterHardware?.({ sim: newSim });
-      setSelectedHardwareId(newSim.id);
-    }
-
-    setIdSearchQuery(val);
-    setRegIdValue('');
-    setRegSerialValue('');
-    setRegNameValue('');
-    setRegSimMsisdn('');
+    setSelectedHardwareId(newDev.id);
+    setIdSearchQuery(newDev.imei || newDev.serial || newDev.deviceId);
     setShowRegisterInline(false);
-    setRegError(null);
+    setLocalError(null);
+  };
+
+  const handleCreatedSensor = (newSen: SensorRecord) => {
+    setPendingRegisteredUnit({ sensor: newSen });
+    onQuickRegisterHardware?.({ sensor: newSen });
+    if (newSen.modelTypeId && categoryModels.some((m) => m.id === newSen.modelTypeId)) {
+      setSelectedModelId(newSen.modelTypeId);
+    }
+    setSelectedHardwareId(newSen.id);
+    setIdSearchQuery(newSen.deviceId || newSen.serial);
+    setShowRegisterInline(false);
+    setLocalError(null);
+  };
+
+  const handleCreatedSim = (newSim: SimRecord) => {
+    setPendingRegisteredUnit({ sim: newSim });
+    onQuickRegisterHardware?.({ sim: newSim });
+    if (newSim.modelTypeId && categoryModels.some((m) => m.id === newSim.modelTypeId)) {
+      setSelectedModelId(newSim.modelTypeId);
+    }
+    setSelectedHardwareId(newSim.id);
+    setIdSearchQuery(newSim.iccid);
+    setShowRegisterInline(false);
     setLocalError(null);
   };
 
@@ -947,11 +854,7 @@ export const HardwareCompositionModal: React.FC<HardwareCompositionModalProps> =
                       </div>
                       <button
                         type="button"
-                        onClick={() => {
-                          setRegIdValue(idSearchQuery.trim());
-                          setRegError(null);
-                          setShowRegisterInline(true);
-                        }}
+                        onClick={() => setShowRegisterInline(true)}
                         className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#F26522] hover:underline cursor-pointer shrink-0"
                       >
                         <Plus className="w-3 h-3" /> Add New {category}
@@ -1008,10 +911,7 @@ export const HardwareCompositionModal: React.FC<HardwareCompositionModalProps> =
                         </div>
                         <button
                           type="button"
-                          onClick={() => {
-                            setRegIdValue(idSearchQuery.trim());
-                            setShowRegisterInline(true);
-                          }}
+                          onClick={() => setShowRegisterInline(true)}
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#F26522] hover:bg-[#d95417] text-white text-[11px] font-semibold cursor-pointer"
                         >
                           <Plus className="w-3.5 h-3.5" /> Register {category} for {targetClient}
@@ -1091,11 +991,7 @@ export const HardwareCompositionModal: React.FC<HardwareCompositionModalProps> =
                         </span>
                         <button
                           type="button"
-                          onClick={() => {
-                            setRegIdValue(idSearchQuery.trim());
-                            setRegError(null);
-                            setShowRegisterInline(true);
-                          }}
+                          onClick={() => setShowRegisterInline(true)}
                           className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-[#F26522] hover:bg-[#d95417] text-white text-[11px] font-semibold cursor-pointer shrink-0"
                         >
                           <Plus className="w-3 h-3" /> Create &amp; Register {category}
@@ -1103,191 +999,6 @@ export const HardwareCompositionModal: React.FC<HardwareCompositionModalProps> =
                       </div>
                     )}
                   </div>
-
-                  {/* Inline Register Missing / New Hardware Drawer Panel */}
-                  {showRegisterInline && (
-                    <div className="p-3.5 rounded-xl border border-[#F26522]/40 bg-[#FFF9F6] space-y-3 shadow-xs">
-                      <div className="flex items-center justify-between border-b border-[#F26522]/15 pb-2">
-                        <div>
-                          <span className="text-[12.5px] font-bold text-slate-900">
-                            Create &amp; Register New {category}
-                          </span>
-                          <div className="text-[10.5px] text-slate-500">
-                            Organization: <strong className="text-slate-700">{targetClient}</strong> · Model:{' '}
-                            <strong className="text-slate-700">
-                              {[activeModelDef?.typeName, activeModelDef?.manufacturer, activeModelDef?.modelReference]
-                                .filter(Boolean)
-                                .join(' · ')}
-                            </strong>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setShowRegisterInline(false)}
-                          className="text-slate-400 hover:text-slate-600 cursor-pointer p-1"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                      {regError && (
-                        <div className="p-2 rounded-lg bg-rose-50 border border-rose-200 text-[11px] text-rose-700 font-medium">
-                          {regError}
-                        </div>
-                      )}
-                      <div className="grid grid-cols-2 gap-2.5">
-                        <div>
-                          <label className="block text-[10.5px] font-semibold text-slate-700 mb-1">
-                            {activeIdentifierLabel} <span className="text-rose-600">*</span>
-                          </label>
-                          <input
-                            type="text"
-                            value={regIdValue}
-                            onChange={(e) => setRegIdValue(e.target.value)}
-                            placeholder={`Enter ${activeIdentifierLabel}`}
-                            className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-white font-mono text-[11.5px] focus:outline-none focus:border-[#F26522]"
-                          />
-                        </div>
-                        {category === 'SIM' ? (
-                          <div>
-                            <label className="block text-[10.5px] font-semibold text-slate-700 mb-1">
-                              Mobile Number / MSISDN
-                            </label>
-                            <input
-                              type="text"
-                              value={regSimMsisdn}
-                              onChange={(e) => setRegSimMsisdn(e.target.value)}
-                              placeholder="e.g. +91 9810000000"
-                              className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-[11.5px] focus:outline-none focus:border-[#F26522]"
-                            />
-                          </div>
-                        ) : (
-                          <div>
-                            <label className="block text-[10.5px] font-semibold text-slate-700 mb-1">
-                              {category} Name / Label (Optional)
-                            </label>
-                            <input
-                              type="text"
-                              value={regNameValue}
-                              onChange={(e) => setRegNameValue(e.target.value)}
-                              placeholder={category === 'Device' ? 'e.g. Cabin Dashcam #04' : 'e.g. Reefer Temp #2'}
-                              className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-[11.5px] focus:outline-none focus:border-[#F26522]"
-                            />
-                          </div>
-                        )}
-
-                        {category === 'SIM' ? (
-                          <>
-                            <div>
-                              <label className="block text-[10.5px] font-semibold text-slate-700 mb-1">
-                                Operator / Provider
-                              </label>
-                              <select
-                                value={regSimOperator}
-                                onChange={(e) => setRegSimOperator(e.target.value)}
-                                className="w-full h-8 px-2 rounded-lg border border-slate-200 bg-white text-[11.5px]"
-                              >
-                                {['Airtel', 'Jio', 'Vi', 'BSNL'].map((op) => (
-                                  <option key={op} value={op}>
-                                    {op}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                            <div>
-                              <label className="block text-[10.5px] font-semibold text-slate-700 mb-1">
-                                Form Factor
-                              </label>
-                              <select
-                                value={regSimFormFactor}
-                                onChange={(e) => setRegSimFormFactor(e.target.value as any)}
-                                className="w-full h-8 px-2 rounded-lg border border-slate-200 bg-white text-[11.5px]"
-                              >
-                                {['Nano (4FF)', 'Micro (3FF)', 'Standard (2FF)', 'eSIM'].map((ff) => (
-                                  <option key={ff} value={ff}>
-                                    {ff}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                            <div>
-                              <label className="block text-[10.5px] font-semibold text-slate-700 mb-1">
-                                Plan / Package
-                              </label>
-                              <select
-                                value={regSimPlan}
-                                onChange={(e) => setRegSimPlan(e.target.value)}
-                                className="w-full h-8 px-2 rounded-lg border border-slate-200 bg-white text-[11.5px]"
-                              >
-                                {['IoT Business 10GB', 'M2M Global 5GB', 'M2M Telemetry 2GB', 'Fleet Unlimited 4G'].map(
-                                  (pl) => (
-                                    <option key={pl} value={pl}>
-                                      {pl}
-                                    </option>
-                                  )
-                                )}
-                              </select>
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            <div>
-                              <label className="block text-[10.5px] font-semibold text-slate-700 mb-1">
-                                Serial Number (Optional)
-                              </label>
-                              <input
-                                type="text"
-                                value={regSerialValue}
-                                onChange={(e) => setRegSerialValue(e.target.value)}
-                                placeholder="e.g. SN-994021"
-                                className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-white font-mono text-[11.5px] focus:outline-none focus:border-[#F26522]"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[10.5px] font-semibold text-slate-700 mb-1">
-                                Inventory Location
-                              </label>
-                              <input
-                                type="text"
-                                value={regLocationValue}
-                                onChange={(e) => setRegLocationValue(e.target.value)}
-                                placeholder="e.g. Mundra CT2"
-                                className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-[11.5px] focus:outline-none focus:border-[#F26522]"
-                              />
-                            </div>
-                          </>
-                        )}
-                        <div>
-                          <label className="block text-[10.5px] font-semibold text-slate-700 mb-1">
-                            Lifecycle Status
-                          </label>
-                          <select
-                            value={regLifecycle}
-                            onChange={(e) => setRegLifecycle(e.target.value as 'Inventory' | 'Active')}
-                            className="w-full h-8 px-2 rounded-lg border border-slate-200 bg-white text-[11.5px]"
-                          >
-                            <option value="Inventory">Inventory</option>
-                            <option value="Active">Active</option>
-                          </select>
-                        </div>
-                      </div>
-                      <div className="flex justify-end gap-2 pt-1">
-                        <button
-                          type="button"
-                          onClick={() => setShowRegisterInline(false)}
-                          className="h-7 px-3 rounded-lg border border-slate-200 bg-white text-[11px] font-semibold cursor-pointer"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleInlineRegister}
-                          className="h-7 px-3 rounded-lg bg-[#F26522] hover:bg-[#d95417] text-white text-[11px] font-semibold cursor-pointer"
-                        >
-                          Save {category} &amp; Select
-                        </button>
-                      </div>
-                    </div>
-                  )}
                 </>
               )}
             </div>
@@ -1525,6 +1236,42 @@ export const HardwareCompositionModal: React.FC<HardwareCompositionModalProps> =
           </div>
         </div>
       </div>
+
+      {/* Full Master Create Drawers Overlay (z-[110]) */}
+      {showRegisterInline && category === 'Device' && (
+        <FullCreateDeviceDrawer
+          targetClient={targetClient}
+          site={site}
+          initialModelDef={activeModelDef}
+          initialSearchText={idSearchQuery}
+          existingDevices={effectiveDevices}
+          existingSensors={effectiveSensors}
+          onSave={handleCreatedDevice}
+          onClose={() => setShowRegisterInline(false)}
+        />
+      )}
+      {showRegisterInline && category === 'Sensor' && (
+        <FullCreateSensorDrawer
+          targetClient={targetClient}
+          site={site}
+          initialModelDef={activeModelDef}
+          initialSearchText={idSearchQuery}
+          existingDevices={effectiveDevices}
+          existingSensors={effectiveSensors}
+          onSave={handleCreatedSensor}
+          onClose={() => setShowRegisterInline(false)}
+        />
+      )}
+      {showRegisterInline && category === 'SIM' && (
+        <FullCreateSimDrawer
+          targetClient={targetClient}
+          initialModelDef={activeModelDef}
+          initialSearchText={idSearchQuery}
+          existingSims={effectiveSims}
+          onSave={handleCreatedSim}
+          onClose={() => setShowRegisterInline(false)}
+        />
+      )}
     </div>
   );
 };

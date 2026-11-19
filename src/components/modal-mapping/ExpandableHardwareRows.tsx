@@ -32,6 +32,7 @@ import {
   validateHardwareBindingPair
 } from '../../types/modalMaster';
 import { DetailsDrawerTab } from './ConnectionDetailsDrawer';
+import { RowActionMenu } from '../common/RowActionMenu';
 
 // §5 Hardware Icon Badge (Device=blue, DVR/MDVR=blue recorder, IP Camera=blue camera,
 // Sensor=purple, Temp Sensor=purple thermometer, SIM=green SIM card)
@@ -442,7 +443,7 @@ export const ExpandableHardwareRows: React.FC<ExpandableHardwareRowsProps> = ({
                 <th className="py-2 px-2.5 min-w-[155px]">Effective Start</th>
                 <th className="py-2 px-2.5 min-w-[155px]">Effective End</th>
                 <th className="py-2 px-2.5 min-w-[115px]">Binding Status</th>
-                <th className="py-2 pl-2.5 pr-3 text-right min-w-[95px]">Actions</th>
+                <th className="py-2 pl-2.5 pr-3 text-right w-[72px]">Actions</th>
               </tr>
             ) : (
               <tr className="bg-[#F8FAFC] border-b border-slate-200 text-[11px] font-semibold text-slate-500">
@@ -455,7 +456,7 @@ export const ExpandableHardwareRows: React.FC<ExpandableHardwareRowsProps> = ({
                 <th className="py-2 px-2.5 min-w-[155px]">Effective Start</th>
                 <th className="py-2 px-2.5 min-w-[155px]">Effective End</th>
                 <th className="py-2 px-2.5 min-w-[120px]">Status</th>
-                <th className="py-2 pl-2.5 pr-3 text-right min-w-[95px]">Actions</th>
+                <th className="py-2 pl-2.5 pr-3 text-right w-[72px]">Actions</th>
               </tr>
             )}
           </thead>
@@ -657,33 +658,34 @@ export const ExpandableHardwareRows: React.FC<ExpandableHardwareRowsProps> = ({
 
                   {/* Actions */}
                   <td className="py-2 pl-2.5 pr-3 text-right whitespace-nowrap">
-                    <div className="inline-flex items-center justify-end gap-1">
-                      <button
-                        type="button"
-                        title="View hardware & binding details"
-                        onClick={() => onOpenDetails(connection, binding ? 'bindings' : 'hardware')}
-                        className="p-1 rounded text-slate-500 hover:text-slate-900 hover:bg-slate-100 cursor-pointer"
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                      </button>
-                      {canEdit && binding && (
-                        <button
-                          type="button"
-                          title={`Edit binding ${binding.id}`}
-                          onClick={() => openEditBindingModal(binding)}
-                          className="p-1 rounded text-slate-500 hover:text-[#F26522] hover:bg-orange-50 cursor-pointer"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        title="View binding & connection history"
-                        onClick={() => onOpenDetails(connection, 'activity')}
-                        className="p-1 rounded text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 cursor-pointer"
-                      >
-                        <History className="w-3.5 h-3.5" />
-                      </button>
+                    <div className="inline-flex items-center justify-end">
+                      <RowActionMenu
+                        ariaLabel={`Actions for ${member.identifierValue}`}
+                        menuWidthClass="w-56"
+                        items={[
+                          {
+                            id: 'view',
+                            label: 'View hardware & binding details',
+                            icon: <Eye className="w-3.5 h-3.5 text-slate-400" />,
+                            onClick: () => onOpenDetails(connection, binding ? 'bindings' : 'hardware'),
+                          },
+                          {
+                            id: 'edit',
+                            label: binding ? `Edit binding ${binding.id}` : 'Edit binding',
+                            icon: <Edit2 className="w-3.5 h-3.5 text-slate-400" />,
+                            hidden: !(canEdit && binding),
+                            onClick: () => {
+                              if (binding) openEditBindingModal(binding);
+                            },
+                          },
+                          {
+                            id: 'history',
+                            label: 'View binding & history',
+                            icon: <History className="w-3.5 h-3.5 text-slate-400" />,
+                            onClick: () => onOpenDetails(connection, 'activity'),
+                          },
+                        ]}
+                      />
                     </div>
                   </td>
                 </tr>

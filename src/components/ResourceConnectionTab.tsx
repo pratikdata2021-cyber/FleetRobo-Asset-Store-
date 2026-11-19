@@ -34,6 +34,11 @@ import {
   Building2
 } from 'lucide-react';
 import {
+  DirectBulkUploadView,
+  formatUploadFileSize,
+  useDirectUploadState
+} from './common/DirectBulkUploadView';
+import {
   ModalMasterStore,
   ConnectionRecord,
   HardwareBinding,
@@ -81,6 +86,9 @@ import {
   DetailsDrawerTab
 } from './modal-mapping/ConnectionDetailsDrawer';
 import { ColumnCataloguePopover } from './ColumnCataloguePopover';
+import { VehicleDrawer } from './VehicleDrawer';
+import { DriverDrawer } from './DriverDrawer';
+import { RowActionMenu } from './common/RowActionMenu';
 
 interface ResourceConnectionTabProps {
   store: ModalMasterStore;
@@ -181,7 +189,6 @@ export const ResourceConnectionTab: React.FC<ResourceConnectionTabProps> = ({
 
   const [newViewName, setNewViewName] = useState('');
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set(['RCA-2041']));
-  const [openMoreRowId, setOpenMoreRowId] = useState<string | null>(null);
   const [connDetailsState, setConnDetailsState] = useState<{
     conn: ConnectionRecord;
     tab: DetailsDrawerTab;
@@ -218,17 +225,13 @@ export const ResourceConnectionTab: React.FC<ResourceConnectionTabProps> = ({
   const [formNotes, setFormNotes] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
 
-  // Inline Quick-Create Vehicle / Driver inside Resource Drawer
+  // Full Vehicle / Driver Create Drawer triggers inside Resource Drawer
   const [quickCreateKind, setQuickCreateKind] = useState<null | 'Vehicle' | 'Driver'>(null);
   const [qcVehicleReg, setQcVehicleReg] = useState('');
-  const [qcVehicleModel, setQcVehicleModel] = useState('Tata Prima 5530');
-  const [qcDriverName, setQcDriverName] = useState('');
   const [qcDriverPhone, setQcDriverPhone] = useState('');
-  const [qcDriverLicence, setQcDriverLicence] = useState('');
 
-  // Import & Export state
-  const [importText, setImportText] = useState('');
-  const [importFormat, setImportFormat] = useState<'csv' | 'json'>('csv');
+  // Direct upload & Export state
+  const resourceUpload = useDirectUploadState(activeDrawer === 'import');
   const [exportScope, setExportScope] = useState<'filtered' | 'selected'>('filtered');
 
   // Bulk state
@@ -595,84 +598,45 @@ export const ResourceConnectionTab: React.FC<ResourceConnectionTabProps> = ({
     setActiveDrawer('form');
   };
 
-  const handleQuickCreateResource = () => {
-    if (quickCreateKind === 'Vehicle') {
-      const reg = qcVehicleReg.trim().toUpperCase();
-      if (!reg) {
-        setFormError('Enter Vehicle Registration Number.');
-        return;
-      }
-      if (vehicles.some((v) => v.registration_number.toLowerCase() === reg.toLowerCase())) {
-        setFormError(`Vehicle ${reg} already exists in Vehicle Master.`);
-        return;
-      }
-      const nowIso = new Date().toISOString();
-      const newVeh: Vehicle = {
-        id: `veh-${Date.now()}`,
-        public_id: `VEH-${Date.now().toString().slice(-4)}`,
-        name: `${qcVehicleModel.trim() || 'Tata Prima 5530'} (${reg})`,
-        registration_number: reg,
-        machine_model: qcVehicleModel.trim() || 'Tata Prima 5530',
-        model: qcVehicleModel.trim() || 'Tata Prima 5530',
-        client: formClient,
-        company: formClient,
-        chassis_number: `MAT${Date.now().toString().slice(-10)}`,
-        vin: `MAT${Date.now().toString().slice(-10)}`,
-        transporter: 'Western Logistics',
-        year: 2026,
-        fuel_type: 'Diesel',
-        insurance_to: '2027-11-12',
-        status: 'Available',
-        location: '',
-        fleets: [],
-        created_at: nowIso,
-        updated_at: nowIso
-      };
-      const updated = [newVeh, ...vehicles];
-      setVehicles(updated);
-      saveVehicleMasterStore(updated);
-      setFormSelectedResourceId(newVeh.id);
-      setFormSelectedIdentifier(newVeh.registration_number);
-      setFormSelectedDisplayName(`${newVeh.machine_model} · ${newVeh.registration_number}`);
-      setFormResourceLookup(newVeh.registration_number);
-      setQuickCreateKind(null);
-      setQcVehicleReg('');
-      setFormError(null);
-      showToast(`Vehicle ${reg} created in ${formClient} Vehicle Master & selected.`);
-    } else if (quickCreateKind === 'Driver') {
-      const name = qcDriverName.trim();
-      const phone = qcDriverPhone.trim();
-      if (!name || !phone) {
-        setFormError('Driver Name and Contact Number are required.');
-        return;
-      }
-      const newDrv: Driver = {
-        id: `drv-${Date.now()}`,
-        name,
-        phone,
-        dob: '1990-01-01',
-        status: 'Active',
-        company: formClient,
-        transporter: 'Western Logistics',
-        licence: qcDriverLicence.trim() || `DL-${Date.now().toString().slice(-8)}`,
-        licenceFrom: '2020-01-01',
-        licenceTo: '2030-01-01'
-      };
-      const updated = [newDrv, ...drivers];
-      setDrivers(updated);
-      saveDriverMasterStore(updated);
-      const formattedPhone = phone.startsWith('+') ? phone : `+91 ${phone}`;
-      setFormSelectedResourceId(newDrv.id);
-      setFormSelectedIdentifier(formattedPhone);
-      setFormSelectedDisplayName(newDrv.name);
-      setFormResourceLookup(formattedPhone);
-      setQuickCreateKind(null);
-      setQcDriverName('');
-      setQcDriverPhone('');
-      setQcDriverLicence('');
-      setFormError(null);
-      showToast(`Driver ${name} created in ${formClient} Driver Master & selected.`);
-    }
+  const handleCreatedVehicle = (newVeh: Vehicle) => {
+    const vehicleRecord: Vehicle = {
+      ...newVeh,
+      company: newVeh.company || formClient,
+      client: newVeh.client || formClient
+    };
+    const updated = [vehicleRecord, ...vehicles.filter((v) => v.id !== vehicleRecord.id)];
+    setVehicles(updated);
+    saveVehicleMasterStore(updated);
+    setFormResourceType('Vehicle');
+    setFormSelectedResourceId(vehicleRecord.id);
+    setFormSelectedIdentifier(vehicleRecord.registration_number);
+    setFormSelectedDisplayName(
+      `${vehicleRecord.machine_model || vehicleRecord.model || 'Vehicle'} · ${vehicleRecord.registration_number}`
+    );
+    setFormResourceLookup(vehicleRecord.registration_number);
+    setQuickCreateKind(null);
+    setQcVehicleReg('');
+    setFormError(null);
+    showToast(`Vehicle ${vehicleRecord.registration_number} created in ${vehicleRecord.company} Master & selected.`);
+  };
+
+  const handleCreatedDriver = (newDrv: Driver) => {
+    const driverRecord: Driver = {
+      ...newDrv,
+      company: newDrv.company || formClient
+    };
+    const updated = [driverRecord, ...drivers.filter((d) => d.id !== driverRecord.id)];
+    setDrivers(updated);
+    saveDriverMasterStore(updated);
+    setFormResourceType('Driver');
+    setFormSelectedResourceId(driverRecord.id);
+    setFormSelectedIdentifier(driverRecord.phone);
+    setFormSelectedDisplayName(driverRecord.name);
+    setFormResourceLookup(driverRecord.phone);
+    setQuickCreateKind(null);
+    setQcDriverPhone('');
+    setFormError(null);
+    showToast(`Driver ${driverRecord.name} created in ${driverRecord.company} Master & selected.`);
   };
 
   const handleSaveAllocation = (e: React.FormEvent) => {
@@ -928,15 +892,19 @@ export const ResourceConnectionTab: React.FC<ResourceConnectionTabProps> = ({
     setActiveDrawer(null);
   };
 
-  // Import validation preview
-  const importPreview = useMemo(() => {
-    const raw = importText.trim();
-    if (!raw) return { valid: [] as ResourceAllocation[], invalid: [] as { line: number; reason: string }[] };
+  // Direct CSV/JSON upload execution
+  const processResourceUpload = (fmt: 'csv' | 'json', rawText: string, fileName: string, fileSize?: number) => {
+    const raw = rawText.trim();
+    if (!raw) {
+      resourceUpload.fail('Uploaded file is empty.');
+      return;
+    }
+
     const valid: ResourceAllocation[] = [];
     const invalid: { line: number; reason: string }[] = [];
     const nowIso = new Date().toISOString();
 
-    if (importFormat === 'json') {
+    if (fmt === 'json') {
       try {
         const parsed = JSON.parse(raw);
         const arr = Array.isArray(parsed) ? parsed : [parsed];
@@ -974,7 +942,8 @@ export const ResourceConnectionTab: React.FC<ResourceConnectionTabProps> = ({
           });
         });
       } catch {
-        invalid.push({ line: 1, reason: 'Invalid JSON syntax' });
+        resourceUpload.fail('Invalid JSON syntax.');
+        return;
       }
     } else {
       const lines = raw.split(/\r?\n/).filter((l) => l.trim().length > 0);
@@ -1017,20 +986,33 @@ export const ResourceConnectionTab: React.FC<ResourceConnectionTabProps> = ({
         });
       });
     }
-    return { valid, invalid };
-  }, [importText, importFormat, connectionsMap, store.resourceAllocations.length, actorName]);
 
-  const handleCommitImport = () => {
-    if (importPreview.valid.length === 0) return;
-    setStore((prev) => ({
-      ...prev,
-      resourceAllocations: [...importPreview.valid, ...prev.resourceAllocations]
-    }));
-    setSortKey('');
-    setCurrentPage(1);
-    showToast(`Imported ${importPreview.valid.length} resource allocation(s) (${importPreview.invalid.length} rejected).`);
-    setImportText('');
-    setActiveDrawer(null);
+    if (valid.length === 0) {
+      resourceUpload.fail(
+        invalid[0]?.reason || 'No valid resource allocation rows found in uploaded file.'
+      );
+      return;
+    }
+
+    resourceUpload.startUploading(fileName, formatUploadFileSize(fileSize), () => {
+      setStore((prev) => ({
+        ...prev,
+        resourceAllocations: [...valid, ...prev.resourceAllocations]
+      }));
+      setSortKey('');
+      setCurrentPage(1);
+      showToast(`Imported ${valid.length} resource allocation(s) (${invalid.length} skipped).`);
+      return {
+        headline: 'Resource allocations uploaded successfully',
+        description: `${valid.length} allocation${valid.length === 1 ? '' : 's'} created from ${fileName}.${
+          invalid.length > 0 ? ` ${invalid.length} invalid or unknown row${invalid.length === 1 ? '' : 's'} skipped.` : ''
+        }`,
+        stats: [
+          { label: 'Uploaded', value: valid.length, tone: 'emerald' },
+          { label: 'Skipped', value: invalid.length, tone: invalid.length > 0 ? 'amber' : 'slate' }
+        ]
+      };
+    });
   };
 
   // Saved Views for Resource Connection View
@@ -1368,7 +1350,7 @@ export const ResourceConnectionTab: React.FC<ResourceConnectionTabProps> = ({
                     </th>
                   );
                 })}
-                <th className="sticky right-0 z-30 bg-slate-50 px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b border-l border-slate-200 text-right min-w-[138px]">
+                <th className="sticky right-0 z-30 bg-slate-50 px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b border-l border-slate-200 text-right w-[78px]">
                   <div className="inline-flex items-center justify-end gap-1">
                     <span>ACTIONS</span>
                     <HeaderInfoTooltip text={RESOURCE_VIEW_ACTIONS_TOOLTIP} align="right" />
@@ -1627,82 +1609,67 @@ export const ResourceConnectionTab: React.FC<ResourceConnectionTabProps> = ({
                             isExpanded ? 'bg-[#FFF9F6]' : 'bg-white group-hover:bg-slate-50'
                           }`}
                         >
-                          <div className="inline-flex items-center justify-end gap-1 relative">
-                            <button
-                              type="button"
-                              title="View allocation details"
-                              onClick={() => {
-                                setInspectedAlloc(row);
-                                setInspectorTab('details');
-                                setActiveDrawer('view');
-                              }}
-                              className="p-1.5 rounded-md text-slate-500 hover:text-slate-800 hover:bg-slate-100 cursor-pointer"
-                            >
-                              <Eye className="w-3.5 h-3.5" />
-                            </button>
-                            {canEdit && (
-                              <button
-                                type="button"
-                                title="Edit allocation"
-                                onClick={() => openEditAllocation(row)}
-                                className="p-1.5 rounded-md text-slate-500 hover:text-[#F26522] hover:bg-[#FFF3EE] cursor-pointer"
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              title="View allocation history"
-                              onClick={() => {
-                                setInspectedAlloc(row);
-                                setInspectorTab('history');
-                                setActiveDrawer('view');
-                              }}
-                              className="p-1.5 rounded-md text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 cursor-pointer"
-                            >
-                              <History className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              title="More actions"
-                              onClick={() => setOpenMoreRowId((curr) => (curr === row.id ? null : row.id))}
-                              className="p-1.5 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 cursor-pointer"
-                            >
-                              <MoreVertical className="w-3.5 h-3.5" />
-                            </button>
-
-                            {openMoreRowId === row.id && (
-                              <div className="absolute right-0 top-8 w-52 bg-white rounded-xl shadow-xl border border-slate-200 py-1 z-40 text-left text-[12px]">
-                                {row.conn && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setOpenMoreRowId(null);
-                                      setConnDetailsState({ conn: row.conn!, tab: 'bindings' });
-                                    }}
-                                    className="w-full px-3 py-1.5 hover:bg-slate-50 flex items-center gap-2 text-slate-700 cursor-pointer"
-                                  >
-                                    <Eye className="w-3.5 h-3.5 text-slate-400" /> Inspect Connection ({row.connectionId})
-                                  </button>
-                                )}
-                                {canEdit && row.computedStatus !== 'Ended' && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setOpenMoreRowId(null);
-                                      setEndingAlloc(row);
-                                      setEndDateInput('2026-11-13');
-                                      setEndTimeInput('18:00:00');
-                                      setEndReasonInput('Operational reassignment completed');
-                                      setActiveDrawer('end-modal');
-                                    }}
-                                    className="w-full px-3 py-1.5 hover:bg-rose-50 flex items-center gap-2 text-rose-700 cursor-pointer"
-                                  >
-                                    <StopCircle className="w-3.5 h-3.5" /> End Allocation
-                                  </button>
-                                )}
-                              </div>
-                            )}
+                          <div className="inline-flex items-center justify-end">
+                            <RowActionMenu
+                              ariaLabel={`Actions for ${row.resourceIdentifier}`}
+                              menuWidthClass="w-56"
+                              items={[
+                                {
+                                  id: 'view',
+                                  label: 'View allocation details',
+                                  icon: <Eye className="w-3.5 h-3.5 text-slate-400" />,
+                                  onClick: () => {
+                                    setInspectedAlloc(row);
+                                    setInspectorTab('details');
+                                    setActiveDrawer('view');
+                                  },
+                                },
+                                {
+                                  id: 'edit',
+                                  label: 'Edit allocation',
+                                  icon: <Edit2 className="w-3.5 h-3.5 text-slate-400" />,
+                                  hidden: !canEdit,
+                                  onClick: () => openEditAllocation(row),
+                                },
+                                {
+                                  id: 'history',
+                                  label: 'View allocation history',
+                                  icon: <History className="w-3.5 h-3.5 text-slate-400" />,
+                                  onClick: () => {
+                                    setInspectedAlloc(row);
+                                    setInspectorTab('history');
+                                    setActiveDrawer('view');
+                                  },
+                                },
+                                {
+                                  id: 'inspect-conn',
+                                  label: `Inspect Connection (${row.connectionId})`,
+                                  icon: <Link2 className="w-3.5 h-3.5 text-slate-400" />,
+                                  hidden: !row.conn,
+                                  dividerBefore: true,
+                                  onClick: () => {
+                                    if (row.conn) {
+                                      setConnDetailsState({ conn: row.conn, tab: 'bindings' });
+                                    }
+                                  },
+                                },
+                                {
+                                  id: 'end-alloc',
+                                  label: 'End Allocation',
+                                  icon: <StopCircle className="w-3.5 h-3.5" />,
+                                  tone: 'danger',
+                                  hidden: !canEdit || row.computedStatus === 'Ended',
+                                  dividerBefore: true,
+                                  onClick: () => {
+                                    setEndingAlloc(row);
+                                    setEndDateInput('2026-11-13');
+                                    setEndTimeInput('18:00:00');
+                                    setEndReasonInput('Operational reassignment completed');
+                                    setActiveDrawer('end-modal');
+                                  },
+                                },
+                              ]}
+                            />
                           </div>
                         </td>
                       </tr>
@@ -1973,14 +1940,31 @@ export const ResourceConnectionTab: React.FC<ResourceConnectionTabProps> = ({
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-5 space-y-4">
-              <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-[12px] space-y-1">
-                <div className="font-semibold text-slate-800">Selected Allocations Summary</div>
-                <div className="text-slate-600">
-                  Active / Scheduled eligible to end:{' '}
-                  <strong>{selectedRows.filter((r) => r.computedStatus !== 'Ended').length}</strong> · Already ended:{' '}
-                  <strong>{selectedRows.filter((r) => r.computedStatus === 'Ended').length}</strong>
-                </div>
-              </div>
+              {(() => {
+                const eligibleCount = selectedRows.filter((r) => r.computedStatus !== 'Ended').length;
+                const alreadyEndedCount = selectedRows.filter((r) => r.computedStatus === 'Ended').length;
+                return (
+                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-[12px] space-y-2.5">
+                    <div className="font-semibold text-slate-800">Selected Allocations Confirmation</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border border-slate-200 bg-white text-slate-700">
+                        {selectedRows.length} Selected
+                      </span>
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold border border-rose-200 bg-rose-50 text-rose-700">
+                        {eligibleCount} Eligible to End
+                      </span>
+                      {alreadyEndedCount > 0 && (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border border-amber-200 bg-amber-50 text-amber-800">
+                          {alreadyEndedCount} Already Ended (Skipped)
+                        </span>
+                      )}
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold border border-emerald-200 bg-emerald-50 text-emerald-700">
+                        <CheckCircle2 className="w-3 h-3" /> History Preserved
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
               <div>
                 <FieldLabel label="End Reason" tooltip="Audit reason recorded when ending selected resource allocations." />
                 <input
@@ -2017,74 +2001,76 @@ export const ResourceConnectionTab: React.FC<ResourceConnectionTabProps> = ({
 
       {activeDrawer === 'import' && (
         <div className="fixed inset-0 z-[70] flex justify-end bg-slate-900/30">
-          <div className="w-[500px] bg-white h-full shadow-2xl border-l border-slate-200 flex flex-col">
+          <div className="w-[540px] max-w-full bg-white h-full shadow-2xl border-l border-slate-200 flex flex-col">
             <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
-              <h3 className="text-[15px] font-bold text-slate-900">Import Resource Allocations</h3>
-              <button type="button" onClick={() => setActiveDrawer(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+              <div>
+                <h3 className="text-[15px] font-bold text-slate-900">Import Resource Allocations</h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Upload a CSV or JSON file to allocate resources directly.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveDrawer(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-5 space-y-4">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setImportFormat('csv')}
-                  className={`px-3 py-1 rounded-lg text-[12px] font-semibold border cursor-pointer ${
-                    importFormat === 'csv' ? 'border-[#F26522] bg-[#FFF3EE] text-[#F26522]' : 'border-slate-200 text-slate-600'
-                  }`}
-                >
-                  CSV
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setImportFormat('json')}
-                  className={`px-3 py-1 rounded-lg text-[12px] font-semibold border cursor-pointer ${
-                    importFormat === 'json' ? 'border-[#F26522] bg-[#FFF3EE] text-[#F26522]' : 'border-slate-200 text-slate-600'
-                  }`}
-                >
-                  JSON
-                </button>
-              </div>
-              <div className="text-[11px] text-slate-500">
-                CSV Columns: <code>connectionId,resourceType,resourceIdentifier,mode,effectiveStartAt,effectiveEndAt</code>
-              </div>
-              <textarea
-                value={importText}
-                onChange={(e) => setImportText(e.target.value)}
-                rows={7}
-                placeholder={`connectionId,resourceType,resourceIdentifier,mode,effectiveStartAt,effectiveEndAt\nCON-1277,Vehicle,GJ12CU9456,Permanent,2026-11-13T10:30:00+05:30,`}
-                className="w-full p-3 rounded-lg border border-slate-200 font-mono text-[11px]"
+
+            <div className="flex-1 overflow-y-auto p-6">
+              <DirectBulkUploadView
+                status={resourceUpload.status}
+                progress={resourceUpload.progress}
+                fileLabel={resourceUpload.fileLabel}
+                fileMeta={resourceUpload.fileMeta}
+                errorMessage={resourceUpload.errorMessage}
+                doneSummary={resourceUpload.doneSummary}
+                accept=".csv,.json,text/csv,application/json"
+                dropTitle="Choose CSV / JSON or drag & drop"
+                dropSubtitle="Columns: connectionId, resourceType, resourceIdentifier, mode, effectiveStartAt, effectiveEndAt"
+                chooseButtonLabel="Choose file"
+                downloadLabel="Download template"
+                sampleLabel="Use sample CSV"
+                templateTitle="Need a starting format?"
+                templateSubtitle="Download CSV template or upload a sample resource allocation."
+                doneButtonLabel="Done"
+                onFileSelected={(file) => {
+                  const lower = file.name.toLowerCase();
+                  if (!lower.endsWith('.csv') && !lower.endsWith('.json')) {
+                    resourceUpload.fail('Please upload a .csv or .json file.');
+                    return;
+                  }
+                  const fmt: 'csv' | 'json' = lower.endsWith('.json') ? 'json' : 'csv';
+                  const reader = new FileReader();
+                  reader.onload = (ev) =>
+                    processResourceUpload(fmt, String(ev.target?.result || ''), file.name, file.size);
+                  reader.onerror = () => resourceUpload.fail('Unable to read the selected file.');
+                  reader.readAsText(file);
+                }}
+                onDownloadTemplate={() => {
+                  const defaultConnId = store.connections[0]?.id || 'CON-1277';
+                  const csv =
+                    `connectionId,resourceType,resourceIdentifier,mode,effectiveStartAt,effectiveEndAt\n` +
+                    `${defaultConnId},Vehicle,GJ12CU9456,Permanent,2026-11-13T10:30:00+05:30,`;
+                  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = 'fleetrobo_resource_allocations_template.csv';
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+                onUseSample={() => {
+                  const defaultConnId = store.connections[0]?.id || 'CON-1277';
+                  const sampleCsv =
+                    `connectionId,resourceType,resourceIdentifier,mode,effectiveStartAt,effectiveEndAt\n` +
+                    `${defaultConnId},Vehicle,GJ12CU9456,Permanent,2026-11-13T10:30:00+05:30,`;
+                  processResourceUpload('csv', sampleCsv, 'sample_resource_allocations.csv', sampleCsv.length);
+                }}
+                onReset={resourceUpload.reset}
+                onDone={() => setActiveDrawer(null)}
               />
-              {importText.trim() && (
-                <div className="space-y-2">
-                  <div className="text-[12px] font-semibold text-slate-800">
-                    Validation Preview: <span className="text-emerald-600">{importPreview.valid.length} valid</span> ·{' '}
-                    <span className="text-rose-600">{importPreview.invalid.length} invalid</span>
-                  </div>
-                  {importPreview.invalid.length > 0 && (
-                    <div className="max-h-36 overflow-y-auto p-2.5 rounded-lg bg-rose-50 border border-rose-200 space-y-1 text-[11px] text-rose-700">
-                      {importPreview.invalid.map((err, i) => (
-                        <div key={i}>
-                          Line {err.line}: {err.reason}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-            <div className="px-5 py-3.5 border-t border-slate-200 flex items-center justify-end gap-2">
-              <button type="button" onClick={() => setActiveDrawer(null)} className="px-3 py-1.5 rounded-lg border border-slate-200 text-[12px] font-semibold cursor-pointer">
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={importPreview.valid.length === 0}
-                onClick={handleCommitImport}
-                className="px-4 py-1.5 rounded-lg bg-[#F26522] text-white text-[12px] font-semibold disabled:opacity-40 cursor-pointer"
-              >
-                Import Valid Rows ({importPreview.valid.length})
-              </button>
             </div>
           </div>
         </div>
@@ -2388,69 +2374,6 @@ export const ResourceConnectionTab: React.FC<ResourceConnectionTabProps> = ({
                   </div>
                 )}
 
-                {quickCreateKind && (
-                  <div className="p-3 rounded-lg bg-white border border-[#F26522]/40 space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[12px] font-bold text-slate-900">
-                        Inline + Create {quickCreateKind} ({formClient})
-                      </span>
-                      <button type="button" onClick={() => setQuickCreateKind(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                    {quickCreateKind === 'Vehicle' ? (
-                      <div className="grid grid-cols-2 gap-2">
-                        <input
-                          type="text"
-                          value={qcVehicleReg}
-                          onChange={(e) => setQcVehicleReg(e.target.value)}
-                          placeholder="Registration No.*"
-                          className="h-8 px-2.5 rounded border border-slate-200 text-[12px]"
-                        />
-                        <input
-                          type="text"
-                          value={qcVehicleModel}
-                          onChange={(e) => setQcVehicleModel(e.target.value)}
-                          placeholder="Vehicle Model"
-                          className="h-8 px-2.5 rounded border border-slate-200 text-[12px]"
-                        />
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-3 gap-2">
-                        <input
-                          type="text"
-                          value={qcDriverName}
-                          onChange={(e) => setQcDriverName(e.target.value)}
-                          placeholder="Driver Name*"
-                          className="h-8 px-2.5 rounded border border-slate-200 text-[12px]"
-                        />
-                        <input
-                          type="text"
-                          value={qcDriverPhone}
-                          onChange={(e) => setQcDriverPhone(e.target.value)}
-                          placeholder="Contact No.*"
-                          className="h-8 px-2.5 rounded border border-slate-200 text-[12px]"
-                        />
-                        <input
-                          type="text"
-                          value={qcDriverLicence}
-                          onChange={(e) => setQcDriverLicence(e.target.value)}
-                          placeholder="Licence No."
-                          className="h-8 px-2.5 rounded border border-slate-200 text-[12px]"
-                        />
-                      </div>
-                    )}
-                    <div className="flex justify-end">
-                      <button
-                        type="button"
-                        onClick={handleQuickCreateResource}
-                        className="px-3 py-1 rounded bg-[#F26522] text-white text-[11px] font-semibold cursor-pointer"
-                      >
-                        Create & Select {quickCreateKind}
-                      </button>
-                    </div>
-                  </div>
-                )}
               </div>
 
               {/* Mode, Timezone, Effective Start & End Date+Time */}
@@ -2571,10 +2494,24 @@ export const ResourceConnectionTab: React.FC<ResourceConnectionTabProps> = ({
               </button>
             </div>
             <div className="p-5 space-y-3.5 text-[12px]">
-              <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+              <div className="flex flex-wrap gap-1.5">
+                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border border-orange-200 bg-orange-50 text-[#B85324] font-mono">
+                  {endingAlloc.id}
+                </span>
+                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border border-sky-200 bg-sky-50 text-sky-700">
+                  {endingAlloc.resourceType} · {endingAlloc.resourceIdentifier}
+                </span>
+                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border border-purple-200 bg-purple-50 text-purple-700 font-mono">
+                  {endingAlloc.connectionId}
+                </span>
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold border border-emerald-200 bg-emerald-50 text-emerald-700">
+                  <CheckCircle2 className="w-3 h-3" /> History Preserved
+                </span>
+              </div>
+              <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-slate-600">
                 Ending <strong>{endingAlloc.resourceType}</strong>{' '}
-                <span className="font-mono font-bold">{endingAlloc.resourceIdentifier}</span> on{' '}
-                <span className="font-mono font-bold">{endingAlloc.connectionId}</span>. Historical records remain preserved.
+                <span className="font-mono font-bold text-slate-900">{endingAlloc.resourceIdentifier}</span> on{' '}
+                <span className="font-mono font-bold text-slate-900">{endingAlloc.connectionId}</span>. Historical records remain preserved.
               </div>
               <div>
                 <FieldLabel label="Effective End Date & Time" required tooltip="Exact date and time when this allocation stops." />
@@ -2857,6 +2794,28 @@ export const ResourceConnectionTab: React.FC<ResourceConnectionTabProps> = ({
           }}
         />
       )}
+
+      {/* Full Vehicle / Driver Master Create Drawers (z-[110]) */}
+      <VehicleDrawer
+        isOpen={quickCreateKind === 'Vehicle'}
+        onClose={() => setQuickCreateKind(null)}
+        mode="create"
+        initialVehicle={qcVehicleReg ? ({ registration_number: qcVehicleReg } as Vehicle) : null}
+        onSaveVehicle={handleCreatedVehicle}
+        existingVehicles={vehicles}
+        companyContext={formClient}
+        zIndexClass="z-[110]"
+      />
+      <DriverDrawer
+        isOpen={quickCreateKind === 'Driver'}
+        onClose={() => setQuickCreateKind(null)}
+        mode="create"
+        initialDriver={qcDriverPhone ? ({ phone: qcDriverPhone } as Driver) : null}
+        onSaveDriver={handleCreatedDriver}
+        existingDrivers={drivers}
+        companyContext={formClient}
+        zIndexClass="z-[110]"
+      />
     </div>
   );
 };

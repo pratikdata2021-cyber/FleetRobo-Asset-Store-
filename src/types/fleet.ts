@@ -124,20 +124,44 @@ export const FLEET_12_COLUMNS_CATALOGUE: FleetColumnDef[] = [
     tooltip: 'Public Fleet identifier, for example FLT-1001; clicking can copy the ID.'
   },
   {
+    key: 'company',
+    label: 'Company',
+    group: 'Identity',
+    defaultShown: false,
+    minWidth: '160px',
+    tooltip: 'Workspace company owning this Fleet.'
+  },
+  {
     key: 'drivers_count',
-    label: 'Drivers Count / Manpower',
+    label: 'Drivers Count',
     group: 'Membership',
     defaultShown: true,
-    minWidth: '170px',
+    minWidth: '140px',
     tooltip: 'Count of Drivers directly assigned to this Fleet; children do not roll up.'
   },
   {
     key: 'drivers_online_count',
-    label: 'Drivers Online Count / Active Manpower',
+    label: 'Drivers Online',
     group: 'Membership',
     defaultShown: false,
-    minWidth: '180px',
+    minWidth: '140px',
     tooltip: 'Count of directly assigned Drivers whose existing Driver Master online flag is true; not Fleet Status.'
+  },
+  {
+    key: 'vehicles_count',
+    label: 'Vehicles Count',
+    group: 'Membership',
+    defaultShown: true,
+    minWidth: '140px',
+    tooltip: 'Count of Vehicles directly assigned to this Fleet; children do not roll up.'
+  },
+  {
+    key: 'vehicles_online_count',
+    label: 'Vehicles Online',
+    group: 'Membership',
+    defaultShown: false,
+    minWidth: '140px',
+    tooltip: 'Count of directly assigned Vehicles currently marked telematics online.'
   },
   {
     key: 'task',
@@ -179,6 +203,7 @@ export const DEFAULT_FLEET_VISIBLE_COLUMNS = [
   'parent',
   'zone',
   'drivers_count',
+  'vehicles_count',
   'task',
   'status',
   'created_at'
