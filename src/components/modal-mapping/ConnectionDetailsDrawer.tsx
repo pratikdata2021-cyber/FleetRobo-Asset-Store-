@@ -287,7 +287,7 @@ export const ConnectionDetailsDrawer: React.FC<ConnectionDetailsDrawerProps> = (
                             <span className="inline-flex items-center gap-1.5 font-semibold text-slate-800">
                               {categoryIcon(m.category)}
                               {m.category}
-                              {m.isPrimary && (
+                              {false && m.isPrimary && (
                                 <span className="px-1.5 py-0.2 rounded bg-orange-50 text-[#F26522] border border-orange-200 text-[9px] font-bold">
                                   Primary
                                 </span>

@@ -37,7 +37,6 @@ import {
   Cpu,
   Smartphone,
   ArrowLeftRight,
-  Network,
   Building
 } from 'lucide-react';
 import { VehiclesPageContent } from './components/VehiclesPageContent';
@@ -214,7 +213,6 @@ export default function App() {
   // Admin navigation state
   const [activeAdminMenu, setActiveAdminMenu] = useState('company-details');
   const [modalMasterExpanded, setModalMasterExpanded] = useState(true);
-  const [modalMappingExpanded, setModalMappingExpanded] = useState(true);
 
   // Sync company model access updates between Binary Platform Admin and Client Modal Master
   const [modelAccessTick, setModelAccessTick] = useState(0);
@@ -356,11 +354,19 @@ export default function App() {
                   <>
                     <SidebarItem 
                       icon={Cpu} 
-                      label="Modal Master" 
+                      label="Model Master" 
+                      active={activeAdminMenu === 'devices' || activeAdminMenu === 'sensors' || activeAdminMenu === 'sim-master'}
                       collapsed={isCollapsed} 
                       hasArrow 
                       isExpanded={modalMasterExpanded}
-                      onClick={() => setModalMasterExpanded(!modalMasterExpanded)} 
+                      onClick={() => {
+                        if (!modalMasterExpanded) {
+                          setModalMasterExpanded(true);
+                        }
+                        if (hasEnabledDevices) setActiveAdminMenu('devices');
+                        else if (hasEnabledSensors) setActiveAdminMenu('sensors');
+                        else if (hasEnabledSims) setActiveAdminMenu('sim-master');
+                      }} 
                     />
                     {!isCollapsed && modalMasterExpanded && (
                       <div className="space-y-0.5 my-1 pl-1">
@@ -371,25 +377,19 @@ export default function App() {
                           <SubSidebarItem icon={Radio} label="Sensors" active={activeAdminMenu === 'sensors'} onClick={() => setActiveAdminMenu('sensors')} />
                         )}
                         {hasEnabledSims && (
-                          <SubSidebarItem icon={Smartphone} label="SIM Master" active={activeAdminMenu === 'sim-master'} onClick={() => setActiveAdminMenu('sim-master')} />
+                          <SubSidebarItem icon={Smartphone} label="SIM" active={activeAdminMenu === 'sim-master'} onClick={() => setActiveAdminMenu('sim-master')} />
                         )}
                       </div>
                     )}
                   </>
                 )}
                 <SidebarItem 
-                  icon={Network} 
-                  label="Modal Mapping" 
+                  icon={ArrowLeftRight} 
+                  label="Assets Mapping" 
+                  active={activeAdminMenu === 'modal-mapping'} 
                   collapsed={isCollapsed} 
-                  hasArrow 
-                  isExpanded={modalMappingExpanded}
-                  onClick={() => setModalMappingExpanded(!modalMappingExpanded)} 
+                  onClick={() => setActiveAdminMenu('modal-mapping')} 
                 />
-                {!isCollapsed && modalMappingExpanded && (
-                  <div className="space-y-0.5 my-1 pl-1">
-                    <SubSidebarItem icon={ArrowLeftRight} label="Modal Mapping" active={activeAdminMenu === 'modal-mapping'} onClick={() => setActiveAdminMenu('modal-mapping')} />
-                  </div>
-                )}
               </div>
             </>
           ) : (

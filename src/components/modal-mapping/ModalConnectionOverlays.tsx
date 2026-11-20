@@ -457,7 +457,7 @@ export const ModalConnectionExportModal: React.FC<ExportModalProps> = ({
       <div className="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Download className="w-4 h-4 text-[#F26522]" />
-          <h3 className="text-[14px] font-bold text-slate-900">Export Modal Connections</h3>
+          <h3 className="text-[14px] font-bold text-slate-900">Export Assets Connections</h3>
         </div>
         <button type="button" onClick={onClose} className="p-1 rounded hover:bg-slate-100 text-slate-500 cursor-pointer">
           <X className="w-4 h-4" />

@@ -837,7 +837,7 @@ export const MappingFormDrawer: React.FC<MappingFormDrawerProps> = ({
         <div className="px-6 py-3.5 bg-white border-b border-slate-200 flex items-center justify-between shrink-0">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-[11px] text-slate-500">
-              <span>Modal Mapping</span>
+              <span>Assets Mapping</span>
               <span>·</span>
               <span className="font-semibold text-slate-700">{targetClient}</span>
               <span>·</span>
@@ -1016,18 +1016,18 @@ export const MappingFormDrawer: React.FC<MappingFormDrawerProps> = ({
                 <div className="w-10 h-10 rounded-full bg-[#FFF3EE] text-[#F26522] inline-flex items-center justify-center mx-auto">
                   <Package className="w-5 h-5" />
                 </div>
-                <div className="text-[13px] font-bold text-slate-900">Start by adding Primary Hardware</div>
+                <div className="text-[13px] font-bold text-slate-900">Start by adding Hardware units</div>
                 <p className="text-[11.5px] text-slate-500 max-w-md mx-auto">
                   Add a registered Device (such as an ADAS/DMS Dashcam, GPS Tracker, or MDVR) or a supported Standalone Sensor for{' '}
                   <strong className="text-slate-700">{targetClient}</strong>. Then attach Sensors, SIMs, and chained Devices directly from each row.
                 </p>
                 <div className="flex items-center justify-center gap-2 pt-1">
-                  <button
+                      <button
                     type="button"
                     onClick={() => setComposerState({ mode: 'add-hardware', category: 'Device', parentHardwareId: null })}
                     className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-lg bg-[#F26522] hover:bg-[#d95417] text-white text-[12px] font-semibold cursor-pointer"
                   >
-                    <Plus className="w-3.5 h-3.5" /> Add Primary Device
+                    <Plus className="w-3.5 h-3.5" /> Add Device
                   </button>
                   <button
                     type="button"
@@ -1120,7 +1120,7 @@ export const MappingFormDrawer: React.FC<MappingFormDrawerProps> = ({
                                     <span className="font-bold text-slate-900 truncate">
                                       {m.category}
                                     </span>
-                                    {m.isPrimary && (
+                                    {false && m.isPrimary && (
                                       <span className="text-[10px] font-bold text-[#F26522]">
                                         (Primary)
                                       </span>
@@ -1257,7 +1257,7 @@ export const MappingFormDrawer: React.FC<MappingFormDrawerProps> = ({
                                   >
                                     + SIM
                                   </button>
-                                  {!m.isPrimary && (
+                                  {false && !m.isPrimary && (
                                     <button
                                       type="button"
                                       title="Designate as Primary Device"

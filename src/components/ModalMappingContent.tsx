@@ -178,15 +178,15 @@ export const ModalMappingContent: React.FC<ModalMappingContentProps> = ({
             <div className="flex items-center gap-1.5 text-[11px] text-slate-400 font-medium mb-0.5">
               <span>{viewRole === 'customer' ? 'Operational Setup' : 'Asset Store'}</span>
               <span>/</span>
-              <span>Modal Mapping</span>
+              <span>Assets Mapping</span>
               <span>/</span>
               <span className="text-slate-600 font-semibold">
-                {activeSubTab === 'modal-connection' ? 'Modal Connection' : 'Resource Connection View'}
+                {activeSubTab === 'modal-connection' ? 'Assets Connection' : 'Resource Connection View'}
               </span>
             </div>
             <div className="flex items-center gap-2.5 flex-wrap">
               <h1 className="text-[17px] font-bold text-slate-900 tracking-tight">
-                {activeSubTab === 'modal-connection' ? 'Modal Connection' : 'Resource Connection View'}
+                {activeSubTab === 'modal-connection' ? 'Assets Connection' : 'Resource Connection View'}
               </h1>
               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-[#FFF3EE] text-[#F26522] border border-[#F26522]/20">
                 {activeSubTab === 'modal-connection'
@@ -252,7 +252,7 @@ export const ModalMappingContent: React.FC<ModalMappingContentProps> = ({
                 : 'text-slate-500 hover:text-slate-800'
             }`}
           >
-            <span>Modal Connection</span>
+            <span>Assets Connection</span>
             <span
               className={`px-1.5 py-0.2 rounded-full text-[10px] font-semibold ${
                 activeSubTab === 'modal-connection'

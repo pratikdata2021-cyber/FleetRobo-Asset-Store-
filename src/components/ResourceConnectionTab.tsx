@@ -2777,7 +2777,7 @@ export const ResourceConnectionTab: React.FC<ResourceConnectionTabProps> = ({
           onClose={() => setConnDetailsState(null)}
           onEdit={() => {
             setConnDetailsState(null);
-            showToast('Switch to Modal Connection tab to edit full connection hardware & bindings.');
+            showToast('Switch to Assets Connection tab to edit full connection hardware & bindings.');
           }}
           onEndBinding={handleEndBindingFromResourceTab}
           onExportRecord={(c) => {

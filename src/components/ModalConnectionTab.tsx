@@ -1126,7 +1126,7 @@ export const ModalConnectionTab: React.FC<ModalConnectionTabProps> = ({
 
           <button
             type="button"
-            onClick={() => showToast('Refreshed local Modal Connection dataset.')}
+            onClick={() => showToast('Refreshed local Assets Connection dataset.')}
             title="Refresh local dataset"
             className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 cursor-pointer"
           >

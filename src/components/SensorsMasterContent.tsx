@@ -1064,7 +1064,7 @@ export const SensorsMasterContent: React.FC<SensorsMasterContentProps> = ({ curr
         {/* Page Header */}
         <div className="mb-3 shrink-0">
           <div className="text-[11px] font-medium text-[#8291a0] mb-0.5">
-            Modal Master / <span className="text-[#5c6b7a]">Sensors</span>
+            Model Master / <span className="text-[#5c6b7a]">Sensors</span>
           </div>
           <div className="flex items-center justify-between">
             <div>

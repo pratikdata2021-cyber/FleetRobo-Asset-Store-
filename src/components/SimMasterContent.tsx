@@ -981,7 +981,7 @@ export const SimMasterContent: React.FC<SimMasterContentProps> = ({ currentCompa
         {/* Page Header */}
         <div className="mb-3 shrink-0">
           <div className="text-[11px] font-medium text-[#8291a0] mb-0.5">
-            Modal Master / <span className="text-[#5c6b7a]">SIM Master</span>
+            Model Master / <span className="text-[#5c6b7a]">SIM Master</span>
           </div>
           <h1 className="text-[20px] font-bold text-[#17212b] leading-tight">SIM Master</h1>
           <p className="text-[12px] text-[#5c6b7a] mt-0.5">
