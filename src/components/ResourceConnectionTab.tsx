@@ -31,7 +31,10 @@ import {
   MoreVertical,
   ArrowRight,
   Link2,
-  Building2
+  Building2,
+  Store,
+  MapPin,
+  Wrench
 } from 'lucide-react';
 import {
   DirectBulkUploadView,
@@ -65,7 +68,8 @@ import {
   buildIsoWithTimezone,
   compareConnectionIds,
   downloadModalCsv,
-  parseCsvLine
+  parseCsvLine,
+  getNextResourceAllocationId
 } from '../types/modalMaster';
 import {
   Vehicle,
@@ -726,9 +730,8 @@ export const ResourceConnectionTab: React.FC<ResourceConnectionTabProps> = ({
       }));
       showToast(`Allocation ${editingAlloc.id} updated.`);
     } else {
-      const nextNum = 2041 + store.resourceAllocations.length;
       const newAlloc: ResourceAllocation = {
-        id: `RCA-${nextNum}`,
+        id: getNextResourceAllocationId(store.resourceAllocations),
         companyId: COMPANY_NAME_TO_ID[formClient] || 'comp-adani-mundra',
         companyName: formClient,
         connectionId: formConnectionId,
@@ -922,7 +925,7 @@ export const ResourceConnectionTab: React.FC<ResourceConnectionTabProps> = ({
             return;
           }
           valid.push({
-            id: `RCA-${2100 + store.resourceAllocations.length + valid.length}`,
+            id: getNextResourceAllocationId(store.resourceAllocations, valid.length),
             companyId: conn.companyId,
             companyName: conn.companyName,
             connectionId: conn.id,
@@ -966,7 +969,7 @@ export const ResourceConnectionTab: React.FC<ResourceConnectionTabProps> = ({
           return;
         }
         valid.push({
-          id: `RCA-${2100 + store.resourceAllocations.length + valid.length}`,
+          id: getNextResourceAllocationId(store.resourceAllocations, valid.length),
           companyId: conn.companyId,
           companyName: conn.companyName,
           connectionId: conn.id,
@@ -1123,7 +1126,7 @@ export const ResourceConnectionTab: React.FC<ResourceConnectionTabProps> = ({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search Allocation ID, CON-ID, Vehicle Reg, Driver Contact..."
+              placeholder="Search Vehicle Reg, Driver Contact, Resource, Organization..."
               className="w-full h-8 pl-8 pr-7 rounded-lg border border-slate-200 bg-slate-50/70 text-[12px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:bg-white focus:border-[#F26522]"
             />
             {searchQuery && (
@@ -1160,7 +1163,7 @@ export const ResourceConnectionTab: React.FC<ResourceConnectionTabProps> = ({
             columns={ALL_RESOURCE_VIEW_COLUMNS.map((c) => ({
               key: c.key,
               label: c.label,
-              required: c.key === 'id',
+              required: c.key === 'resourceIdentifier',
               category: c.optional ? 'OPTIONAL COLUMNS' : 'DEFAULT COLUMNS',
             }))}
             visibleKeys={ALL_RESOURCE_VIEW_COLUMNS.filter((c) => !hiddenCols.includes(c.key)).map((c) => c.key)}
@@ -1169,7 +1172,7 @@ export const ResourceConnectionTab: React.FC<ResourceConnectionTabProps> = ({
             }
             defaultKeys={RESOURCE_VIEW_DEFAULT_COLUMNS.map((c) => c.key)}
             roleDefaultKeys={RESOURCE_VIEW_DEFAULT_COLUMNS.map((c) => c.key)}
-            defaultPinnedKeys={['id']}
+            defaultPinnedKeys={['companyName', 'resourceIdentifier']}
             onToast={(msg) => showToast(msg, 'success')}
           />
 
@@ -1389,11 +1392,11 @@ export const ResourceConnectionTab: React.FC<ResourceConnectionTabProps> = ({
                   </td>
                 </tr>
               ) : (
-                currentRows.map((row) => {
+                currentRows.map((row, rowIdx) => {
                   const isSelected = selectedIds.has(row.id);
                   const isExpanded = expandedIds.has(row.id);
                   return (
-                    <React.Fragment key={row.id}>
+                    <React.Fragment key={`${row.id}-${rowIdx}`}>
                       <tr
                         className={`group transition-colors ${
                           isExpanded
@@ -1475,11 +1478,12 @@ export const ResourceConnectionTab: React.FC<ResourceConnectionTabProps> = ({
                             case 'resourceType':
                               cell = (
                                 <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-slate-100 border border-slate-200/80 text-slate-700 font-medium text-[11px]">
-                                  {row.resourceType === 'Vehicle' && <Truck className="w-3.5 h-3.5 text-slate-500" />}
-                                  {row.resourceType === 'Driver' && <User className="w-3.5 h-3.5 text-slate-500" />}
-                                  {row.resourceType !== 'Vehicle' && row.resourceType !== 'Driver' && (
-                                    <Phone className="w-3 h-3 text-slate-500" />
-                                  )}
+                                  {row.resourceType === 'Vehicle' && <Truck className="w-3.5 h-3.5 text-sky-600" />}
+                                  {row.resourceType === 'Driver' && <User className="w-3.5 h-3.5 text-purple-600" />}
+                                  {row.resourceType === 'Fleet' && <Layers className="w-3.5 h-3.5 text-indigo-600" />}
+                                  {row.resourceType === 'Vendor' && <Store className="w-3.5 h-3.5 text-orange-600" />}
+                                  {row.resourceType === 'Place' && <MapPin className="w-3.5 h-3.5 text-emerald-600" />}
+                                  {row.resourceType === 'Equipment' && <Wrench className="w-3.5 h-3.5 text-violet-600" />}
                                   {row.resourceType}
                                 </span>
                               );
@@ -2651,10 +2655,10 @@ export const ResourceConnectionTab: React.FC<ResourceConnectionTabProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {historyForInspected.map((h) => {
+                      {historyForInspected.map((h, idx) => {
                         const st = computeResourceAllocationStatus(h, store.resourceAllocations).status;
                         return (
-                          <tr key={h.id}>
+                          <tr key={`${h.id}-${idx}`}>
                             <td className="px-3 py-2 font-mono font-semibold">{h.id}</td>
                             <td className="px-3 py-2">
                               {h.resourceType} · {h.resourceIdentifier}

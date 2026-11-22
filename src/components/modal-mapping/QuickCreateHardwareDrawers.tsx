@@ -40,6 +40,11 @@ import {
   getEnabledModelsForCompanyName,
   getAvailableClientCompanies
 } from '../../types/companyModelEnablement';
+import {
+  DEVICE_MODEL_UPDATED_EVENT,
+  DeviceModelSeedRecord,
+  loadDeviceModelStore
+} from '../../data/deviceModelSeed';
 
 const FieldLabel: React.FC<{
   label: string;
@@ -125,15 +130,35 @@ export const FullCreateDeviceDrawer: React.FC<FullCreateDeviceDrawerProps> = ({
   }, [targetClient]);
 
   const [formCompany, setFormCompany] = useState(targetClient || availableOrganizations[0] || MODAL_OWNERS[0]);
+  const [deviceModelMaster, setDeviceModelMaster] = useState<DeviceModelSeedRecord[]>(() =>
+    loadDeviceModelStore()
+  );
+
+  useEffect(() => {
+    const syncDeviceModels = () => setDeviceModelMaster(loadDeviceModelStore());
+    window.addEventListener(DEVICE_MODEL_UPDATED_EVENT, syncDeviceModels);
+    window.addEventListener('storage', syncDeviceModels);
+    return () => {
+      window.removeEventListener(DEVICE_MODEL_UPDATED_EVENT, syncDeviceModels);
+      window.removeEventListener('storage', syncDeviceModels);
+    };
+  }, []);
+
   const formEnabledDeviceModels = useMemo(
     () => getEnabledModelsForCompanyName(formCompany).filter((m) => m.category === 'Device'),
     [formCompany]
   );
 
   const formEnabledCategories = useMemo<string[]>(() => {
+    const seededCats = Array.from(new Set(deviceModelMaster.map((m) => m.deviceCategory)));
     const cats = Array.from(new Set(formEnabledDeviceModels.map((m) => m.typeName)));
-    return cats.length > 0 ? cats : ['GPS', 'ADAS/DMS', 'E-Lock', 'CCTV', 'IP Camera', 'Face Terminal'];
-  }, [formEnabledDeviceModels]);
+    return Array.from(
+      new Set([
+        ...seededCats,
+        ...(cats.length > 0 ? cats : ['GPS', 'ADAS/DMS', 'E-Lock', 'CCTV', 'IP Camera', 'Face Terminal']),
+      ])
+    );
+  }, [deviceModelMaster, formEnabledDeviceModels]);
 
   const seedModel = initialModelDef || formEnabledDeviceModels[0] || null;
   const nextNum = 9001 + existingDevices.length;
@@ -205,39 +230,70 @@ export const FullCreateDeviceDrawer: React.FC<FullCreateDeviceDrawerProps> = ({
     return () => document.removeEventListener('mousedown', onOutside);
   }, []);
 
+  const seededModelsForSelectedCategory = useMemo(() => {
+    const normKind = (formKind || '').trim().toLowerCase();
+    return deviceModelMaster.filter((m) => m.deviceCategory.toLowerCase() === normKind);
+  }, [deviceModelMaster, formKind]);
+
   const modelsForSelectedCategory = useMemo(
     () => formEnabledDeviceModels.filter((m) => m.typeName === formKind),
     [formEnabledDeviceModels, formKind]
   );
 
   const availableManufacturers = useMemo<string[]>(() => {
-    if (modelsForSelectedCategory.length > 0) {
-      return Array.from(new Set(modelsForSelectedCategory.map((m) => m.manufacturer)));
-    }
-    const catDef = DEVICE_CATALOGUE[formKind];
-    return catDef ? Object.keys(catDef.manufacturers) : ALL_MANUFACTURERS;
-  }, [modelsForSelectedCategory, formKind]);
+    const seededBrands = seededModelsForSelectedCategory.map((m) => m.brand);
+    const enabledBrands = modelsForSelectedCategory.map((m) => m.manufacturer);
+    const catBrands = DEVICE_CATALOGUE[formKind]
+      ? Object.keys(DEVICE_CATALOGUE[formKind].manufacturers)
+      : [];
+    const merged = Array.from(new Set([...seededBrands, ...enabledBrands, ...catBrands])).filter(Boolean);
+    if (merged.length > 0) return merged;
+    return ALL_MANUFACTURERS;
+  }, [seededModelsForSelectedCategory, modelsForSelectedCategory, formKind]);
 
   const availableModels = useMemo(() => {
-    if (modelsForSelectedCategory.length > 0) {
-      const byMfg = modelsForSelectedCategory.filter((m) => m.manufacturer === formManufacturer);
-      const list = byMfg.length > 0 ? byMfg : modelsForSelectedCategory;
-      return list.map((m) => ({
-        model: m.modelReference,
+    const normMfg = (formManufacturer || '').trim().toLowerCase();
+    const seededByMfg = seededModelsForSelectedCategory.filter(
+      (m) => m.brand.toLowerCase() === normMfg
+    );
+    const enabledByMfg = modelsForSelectedCategory.filter(
+      (m) => m.manufacturer.toLowerCase() === normMfg
+    );
+    const catModels = DEVICE_CATALOGUE[formKind]?.manufacturers[formManufacturer]?.models || [];
+    const seen = new Set<string>();
+    const combined: { model: string; defaultProtocol: string; channelCount: number }[] = [];
+
+    seededByMfg.forEach((m) => {
+      const key = m.model.trim().toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        combined.push({ model: m.model, defaultProtocol: 'MQTT', channelCount: 4 });
+      }
+    });
+    enabledByMfg.forEach((m) => {
+      const key = (m.modelReference || '').trim().toLowerCase();
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        combined.push({ model: m.modelReference, defaultProtocol: 'MQTT', channelCount: 4 });
+      }
+    });
+    catModels.forEach((m) => {
+      const key = m.model.trim().toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        combined.push(m);
+      }
+    });
+    if (combined.length > 0) return combined;
+    if (seededModelsForSelectedCategory.length > 0) {
+      return seededModelsForSelectedCategory.map((m) => ({
+        model: m.model,
         defaultProtocol: 'MQTT',
-        channelCount: 4
+        channelCount: 4,
       }));
     }
-    const catDef = DEVICE_CATALOGUE[formKind];
-    if (!catDef) {
-      return [{ model: formModelText || 'Standard', defaultProtocol: 'MQTT', channelCount: 1 }];
-    }
-    return (
-      catDef.manufacturers[formManufacturer]?.models ||
-      catDef.manufacturers[availableManufacturers[0]]?.models ||
-      []
-    );
-  }, [modelsForSelectedCategory, formManufacturer, formKind, formModelText, availableManufacturers]);
+    return [{ model: formModelText || 'Standard', defaultProtocol: 'MQTT', channelCount: 1 }];
+  }, [seededModelsForSelectedCategory, modelsForSelectedCategory, formManufacturer, formKind, formModelText]);
 
   const selectedModelSpec = useMemo(() => {
     return (
@@ -320,6 +376,18 @@ export const FullCreateDeviceDrawer: React.FC<FullCreateDeviceDrawerProps> = ({
 
   const handleCategoryChange = (newKind: GatewayCategory) => {
     setFormKind(newKind);
+    const seededForCat = deviceModelMaster.filter(
+      (m) => m.deviceCategory.toLowerCase() === newKind.trim().toLowerCase()
+    );
+    if (seededForCat.length > 0) {
+      setFormManufacturer(seededForCat[0].brand);
+      setFormModelText(seededForCat[0].model);
+      const presets = getDeviceModePresets(newKind);
+      setFormModes(presets[0] ? [presets[0]] : ['Standard']);
+      setFormProtocols(resolveDefaultProtocols(undefined, newKind, undefined, newKind === 'Video Telematics' ? 'Metta' : 'Codec8'));
+      setFormChannelCount(4);
+      return;
+    }
     const matchingEnabled = formEnabledDeviceModels.filter((m) => m.typeName === newKind);
     if (matchingEnabled.length > 0) {
       const first = matchingEnabled[0];
@@ -347,6 +415,15 @@ export const FullCreateDeviceDrawer: React.FC<FullCreateDeviceDrawerProps> = ({
 
   const handleManufacturerChange = (newMfg: string) => {
     setFormManufacturer(newMfg);
+    const seededForBrand = deviceModelMaster.filter(
+      (m) =>
+        m.deviceCategory.toLowerCase() === formKind.trim().toLowerCase() &&
+        m.brand.toLowerCase() === newMfg.trim().toLowerCase()
+    );
+    if (seededForBrand.length > 0) {
+      setFormModelText(seededForBrand[0].model);
+      return;
+    }
     const matchingEnabled = formEnabledDeviceModels.filter(
       (m) => m.typeName === formKind && m.manufacturer === newMfg
     );
@@ -448,7 +525,7 @@ export const FullCreateDeviceDrawer: React.FC<FullCreateDeviceDrawerProps> = ({
     const todayStr = new Date().toISOString().slice(0, 10);
 
     const newRecord: DeviceRecord = {
-      id: `dev-focus-${Date.now()}`,
+      id: `dev-focus-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       deviceId: trimmedId,
       name: trimmedName,
       kind: formKind,
@@ -1271,7 +1348,7 @@ export const FullCreateSensorDrawer: React.FC<FullCreateSensorDrawerProps> = ({
 
     const todayStr = new Date().toISOString().slice(0, 10);
     const newRecord: SensorRecord = {
-      id: `sen-focus-${Date.now()}`,
+      id: `sen-focus-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       deviceId: trimmedId,
       name: trimmedName,
       kind: formKind,
@@ -1688,13 +1765,8 @@ export const FullCreateSimDrawer: React.FC<FullCreateSimDrawerProps> = ({
       return;
     }
 
-    let nextSeq = 1000 + existingSims.length;
-    while (existingSims.some((s) => s.id === `SIM-${nextSeq}`)) {
-      nextSeq += 1;
-    }
-
     const newRecord: SimRecord = {
-      id: `SIM-${nextSeq}`,
+      id: `SIM-rt-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       iccid: trimmedPrimaryId,
       msisdn:
         activeIdentifierType.trim().toUpperCase() === 'MSISDN' && !formMsisdn.trim()

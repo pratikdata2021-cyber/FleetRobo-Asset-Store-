@@ -8,10 +8,9 @@ import {
   generateModalMasterSeedData,
   ModalMasterStore
 } from '../types/modalMaster';
-import { getAvailableClientCompanies } from '../types/companyModelEnablement';
 import { ModalConnectionTab } from './ModalConnectionTab';
 import { ResourceConnectionTab } from './ResourceConnectionTab';
-import { CheckCircle2, AlertTriangle, X, RotateCcw, Building2, Shield } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, X, RotateCcw, Shield } from 'lucide-react';
 
 interface ModalMappingContentProps {
   currentCompany?: string;
@@ -31,27 +30,9 @@ export const ModalMappingContent: React.FC<ModalMappingContentProps> = ({
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const selfWriteRef = React.useRef(false);
 
-  // Platform Admin can inspect All Organizations or focus on a specific parent/child company; Organization Admin & Customer are locked to currentCompany
+  // Platform Admin views All Clients scope; Organization Admin & Customer are scoped to currentCompany
   const isPlatformAdmin = (currentCompany === 'Platform Admin' || currentCompany === 'Binary') && viewRole === 'admin';
-  const [adminClientScope, setAdminClientScope] = useState<string>('All Clients');
-  const [companyListTick, setCompanyListTick] = useState(0);
-
-  useEffect(() => {
-    const syncCompanies = () => setCompanyListTick((t) => t + 1);
-    window.addEventListener('fleetrobo:model-access-updated', syncCompanies);
-    window.addEventListener('storage', syncCompanies);
-    return () => {
-      window.removeEventListener('fleetrobo:model-access-updated', syncCompanies);
-      window.removeEventListener('storage', syncCompanies);
-    };
-  }, []);
-
-  const availableOrganizations = useMemo(() => {
-    void companyListTick;
-    return getAvailableClientCompanies();
-  }, [companyListTick]);
-
-  const activeCompanyScope = isPlatformAdmin ? adminClientScope : currentCompany;
+  const activeCompanyScope = isPlatformAdmin ? 'All Clients' : currentCompany;
   const canEdit = viewRole === 'admin';
 
   useEffect(() => {
@@ -203,31 +184,6 @@ export const ModalMappingContent: React.FC<ModalMappingContentProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
-            {isPlatformAdmin ? (
-              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 h-8">
-                <Building2 className="w-3.5 h-3.5 text-[#F26522]" />
-                <span className="text-[11px] font-medium text-slate-500">Organization Name:</span>
-                <select
-                  value={adminClientScope}
-                  onChange={(e) => setAdminClientScope(e.target.value)}
-                  className="bg-transparent text-[11px] font-bold text-slate-800 focus:outline-none cursor-pointer"
-                >
-                  <option value="All Clients">All Organizations</option>
-                  {availableOrganizations.map((client) => (
-                    <option key={client} value={client}>
-                      {client}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 h-8 text-[11px]">
-                <Building2 className="w-3.5 h-3.5 text-slate-500" />
-                <span className="text-slate-500 font-medium">Organization:</span>
-                <span className="font-bold text-slate-800">{activeCompanyScope}</span>
-              </div>
-            )}
-
             {canEdit && (
               <button
                 type="button"

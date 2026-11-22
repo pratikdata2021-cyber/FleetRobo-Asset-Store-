@@ -420,7 +420,7 @@ export const SimMasterContent: React.FC<SimMasterContentProps> = ({ currentCompa
     setFormOwner(targetOrg);
     setFormIdentifierType(idType);
     setFormIccid(idType === 'ICCID' ? `899186104312451${nextSuffix}` : '');
-    setFormSimId(`SIM-${nextNum}`);
+    setFormSimId(`SIM-rt-${Date.now()}`);
     setFormMsisdn('');
     setFormCategory(cat);
     setFormOperator(op);
@@ -517,13 +517,9 @@ export const SimMasterContent: React.FC<SimMasterContentProps> = ({ currentCompa
       }));
       showToast(`SIM (${activeIdentifierType}: ${trimmedPrimaryId}) updated.`);
     } else {
-      let nextSeq = 1000 + store.sims.length;
-      while (store.sims.some((s) => s.id === `SIM-${nextSeq}`)) {
-        nextSeq += 1;
-      }
       const generatedRecordId = formSimId.trim() && !store.sims.some((s) => s.id === formSimId.trim())
         ? formSimId.trim()
-        : `SIM-${nextSeq}`;
+        : `SIM-rt-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
       const newRecord: SimRecord = {
         id: generatedRecordId,
         iccid: trimmedPrimaryId,
@@ -874,7 +870,7 @@ export const SimMasterContent: React.FC<SimMasterContentProps> = ({ currentCompa
 
     simUpload.startUploading(fileName, formatUploadFileSize(fileSize), () => {
       const created: SimRecord[] = valid.map((v, i) => ({
-        id: `SIM-${1000 + store.sims.length + i}`,
+        id: `SIM-imp-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 6)}`,
         iccid: v.iccid!,
         msisdn: v.msisdn || '',
         operator: v.operator || 'Airtel',

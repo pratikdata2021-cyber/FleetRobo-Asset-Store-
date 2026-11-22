@@ -425,10 +425,10 @@ export const ConnectionDetailsDrawer: React.FC<ConnectionDetailsDrawerProps> = (
                         </td>
                       </tr>
                     ) : (
-                      connAllocations.map((a) => {
+                      connAllocations.map((a, idx) => {
                         const st = computeResourceAllocationStatus(a, allAllocations);
                         return (
-                          <tr key={a.id} className="hover:bg-slate-50/60">
+                          <tr key={`${a.id}-${idx}`} className="hover:bg-slate-50/60">
                             <td className="px-3 py-2.5 font-mono font-semibold text-slate-800">{a.id}</td>
                             <td className="px-3 py-2.5">
                               <span className="inline-flex items-center gap-1 font-medium text-slate-700">

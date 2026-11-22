@@ -30,7 +30,10 @@ import {
   ChevronsUpDown,
   User,
   Trash2,
-  Building2
+  Building2,
+  Store,
+  MapPin,
+  Wrench
 } from 'lucide-react';
 import {
   ModalMasterStore,
@@ -254,16 +257,14 @@ export const ModalConnectionTab: React.FC<ModalConnectionTabProps> = ({
             ? formatDateTimeWithTz(new Date(Math.max(...endTimes)).toISOString(), 'Asia/Kolkata')
             : 'Open-ended / Mixed';
 
-        const activeVehicles = cAllocs.filter(
-          (a) =>
-            a.resourceType === 'Vehicle' &&
-            computeResourceAllocationStatus(a, store.resourceAllocations, nowMs).status !== 'Ended'
+        const activeAllocs = cAllocs.filter(
+          (a) => computeResourceAllocationStatus(a, store.resourceAllocations, nowMs).status !== 'Ended'
         );
-        const activeDrivers = cAllocs.filter(
-          (a) =>
-            a.resourceType === 'Driver' &&
-            computeResourceAllocationStatus(a, store.resourceAllocations, nowMs).status !== 'Ended'
+        const activeResources = Array.from(
+          new Map(activeAllocs.map((a) => [`${a.resourceType}::${a.resourceId}`, a])).values()
         );
+        const activeVehicles = activeResources.filter((a) => a.resourceType === 'Vehicle');
+        const activeDrivers = activeResources.filter((a) => a.resourceType === 'Driver');
         const activeVehicle = activeVehicles[0];
         const activeDriver = activeDrivers[0];
 
@@ -279,9 +280,10 @@ export const ModalConnectionTab: React.FC<ModalConnectionTabProps> = ({
           bindingStatuses: bindingStatuses.map((s) => s.status),
           cAllocs,
           primaryUnit,
+          activeResources,
           activeVehicle,
           activeDriver,
-          extraResourceCount: Math.max(0, activeVehicles.length + activeDrivers.length - (activeVehicle ? 1 : 0) - (activeDriver ? 1 : 0)),
+          extraResourceCount: Math.max(0, activeResources.length - 2),
           bindingHealth,
           bindingStatusCounts: `${activeBindCount} Active · ${schedBindCount} Sched · ${endedBindCount} Ended`,
           earliestStart: earliestStart ? formatDateTimeWithTz(earliestStart, 'Asia/Kolkata') : '—',
@@ -294,7 +296,7 @@ export const ModalConnectionTab: React.FC<ModalConnectionTabProps> = ({
   // Summary bar totals (computed, no architecture counts)
   const summaryStats = useMemo(() => {
     const withBindings = enrichedConnections.filter((r) => r.bindingCount > 0).length;
-    const withResources = enrichedConnections.filter((r) => r.activeVehicle || r.activeDriver).length;
+    const withResources = enrichedConnections.filter((r) => r.activeResources.length > 0).length;
     return {
       total: enrichedConnections.length,
       withBindings,
@@ -1056,7 +1058,7 @@ export const ModalConnectionTab: React.FC<ModalConnectionTabProps> = ({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search CON-ID, name, IMEI, ICCID, Vehicle Reg..."
+              placeholder="Search resources, IMEI, Sensor ID, ICCID, organization..."
               className="w-full h-8 pl-8 pr-7 rounded-lg border border-slate-200 bg-slate-50/70 text-[12px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:bg-white focus:border-[#F26522]"
             />
             {searchQuery && (
@@ -1093,7 +1095,7 @@ export const ModalConnectionTab: React.FC<ModalConnectionTabProps> = ({
             columns={ALL_MODAL_CONNECTION_COLUMNS.map((c) => ({
               key: c.key,
               label: c.label,
-              required: c.key === 'id',
+              required: c.key === 'resourceAllocation',
               category: c.optional ? 'OPTIONAL COLUMNS' : 'DEFAULT COLUMNS',
             }))}
             visibleKeys={ALL_MODAL_CONNECTION_COLUMNS.filter((c) => !hiddenCols.includes(c.key)).map((c) => c.key)}
@@ -1102,7 +1104,7 @@ export const ModalConnectionTab: React.FC<ModalConnectionTabProps> = ({
             }
             defaultKeys={MODAL_CONNECTION_DEFAULT_COLUMNS.map((c) => c.key)}
             roleDefaultKeys={MODAL_CONNECTION_DEFAULT_COLUMNS.map((c) => c.key)}
-            defaultPinnedKeys={['id']}
+            defaultPinnedKeys={['companyName', 'resourceAllocation']}
             onToast={(msg) => showToast(msg, 'success')}
           />
 
@@ -1262,8 +1264,6 @@ export const ModalConnectionTab: React.FC<ModalConnectionTabProps> = ({
                 {visibleColumns.map((col, idx) => {
                   const sortable = [
                     'companyName',
-                    'id',
-                    'name',
                     'deviceCount',
                     'sensorCount',
                     'simCount',
@@ -1496,34 +1496,41 @@ export const ModalConnectionTab: React.FC<ModalConnectionTabProps> = ({
                           );
                         }
                         if (col.key === 'resourceAllocation') {
+                          const renderResIcon = (rt: string) => {
+                            if (rt === 'Vehicle') return <Truck className="w-3.5 h-3.5 text-sky-600 shrink-0" />;
+                            if (rt === 'Driver') return <User className="w-3.5 h-3.5 text-purple-600 shrink-0" />;
+                            if (rt === 'Fleet') return <Layers className="w-3.5 h-3.5 text-indigo-600 shrink-0" />;
+                            if (rt === 'Vendor') return <Store className="w-3.5 h-3.5 text-orange-600 shrink-0" />;
+                            if (rt === 'Place') return <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />;
+                            return <Wrench className="w-3.5 h-3.5 text-violet-600 shrink-0" />;
+                          };
                           return (
                             <td key={col.key} className={`px-3 ${rowPad}`}>
-                              {row.activeVehicle || row.activeDriver ? (
+                              {row.activeResources.length > 0 ? (
                                 <button
                                   type="button"
                                   onClick={() => setDetailsState({ conn, tab: 'resources' })}
-                                  className="text-left cursor-pointer hover:text-[#F26522]"
+                                  className="text-left cursor-pointer hover:text-[#F26522] space-y-0.5"
                                 >
-                                  {row.activeVehicle ? (
-                                    <div className="inline-flex items-center gap-1 font-semibold text-slate-900">
-                                      <Truck className="w-3.5 h-3.5 text-slate-400" />
-                                      <span>{row.activeVehicle.resourceIdentifier}</span>
-                                      {row.extraResourceCount > 0 && (
-                                        <span className="px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 text-[10px]">
-                                          +{row.extraResourceCount}
-                                        </span>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <div className="inline-flex items-center gap-1 font-semibold text-slate-900">
-                                      <User className="w-3.5 h-3.5 text-slate-400" />
-                                      <span>Driver linked</span>
-                                    </div>
-                                  )}
-                                  {row.activeDriver && (
-                                    <div className="text-[10.5px] text-slate-500 flex items-center gap-1">
-                                      <User className="w-3 h-3 text-slate-400" />
-                                      <span>{row.activeDriver.resourceIdentifier}</span>
+                                  <div className="inline-flex items-center gap-1.5 font-semibold text-slate-900">
+                                    {renderResIcon(row.activeResources[0].resourceType)}
+                                    <span>{row.activeResources[0].resourceIdentifier}</span>
+                                    <span className="text-[10px] font-medium text-slate-400">
+                                      ({row.activeResources[0].resourceType})
+                                    </span>
+                                    {row.extraResourceCount > 0 && (
+                                      <span className="px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 text-[10px]">
+                                        +{row.extraResourceCount}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {row.activeResources[1] && (
+                                    <div className="text-[10.5px] text-slate-500 flex items-center gap-1.5">
+                                      {renderResIcon(row.activeResources[1].resourceType)}
+                                      <span>{row.activeResources[1].resourceIdentifier}</span>
+                                      <span className="text-[10px] text-slate-400">
+                                        ({row.activeResources[1].resourceType})
+                                      </span>
                                     </div>
                                   )}
                                 </button>

@@ -78,6 +78,11 @@ import {
   saveModelCategoryStore,
 } from '../types/modelCategoryMaster';
 import { loadCanonicalVendors, VendorRecord } from '../data/vendorsSeed';
+import {
+  DeviceModelSeedRecord,
+  loadDeviceModelStore,
+} from '../data/deviceModelSeed';
+import { DeviceModelCatalogueSection } from './DeviceModelCatalogueSection';
 import { ColumnCataloguePopover } from './ColumnCataloguePopover';
 
 export const MODEL_CATEGORY_COLUMNS = [
@@ -158,8 +163,18 @@ const InfoTip: React.FC<{ text: string; align?: 'left' | 'right' | 'center' }> =
 
 export const ModelCategoryMasterContent: React.FC = () => {
   const [records, setRecords] = useState<ModelCategoryRecord[]>(() => loadModelCategoryStore());
+  const [deviceModels, setDeviceModels] = useState<DeviceModelSeedRecord[]>(() =>
+    loadDeviceModelStore()
+  );
+  const [modelAddSignal, setModelAddSignal] = useState(0);
+  const [modelExportSignal, setModelExportSignal] = useState(0);
+  const [modelResetSignal, setModelResetSignal] = useState(0);
+  const [modelImportSignal, setModelImportSignal] = useState(0);
+
   const [searchQuery, setSearchQuery] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState<'All' | MainCategory>('All');
+  const [categoryFilter, setCategoryFilter] = useState<'device-models' | 'All' | MainCategory>(
+    'device-models'
+  );
   const [statusFilter, setStatusFilter] = useState<'All' | ModelCategoryStatus>('All');
 
   // Sorting
@@ -1069,51 +1084,97 @@ export const ModelCategoryMasterContent: React.FC = () => {
             <div className="flex items-center gap-2.5">
               <h1 className="text-xl font-bold text-slate-900 tracking-tight">Model Category Master</h1>
               <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-orange-100 text-[#FA8A63]">
-                {records.length} total
+                {categoryFilter === 'device-models' ? deviceModels.length : records.length} total
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-1">
-              Create and manage the catalog of Device, Sensor, and SIM model types, protocols, and identifier standards.
+              {categoryFilter === 'device-models'
+                ? 'Manage the seeded Device Model catalogue across GPS, AIS GPS, Portable GPS, E-Lock, and Video Telematics.'
+                : 'Create and manage the catalog of Device, Sensor, and SIM model types, protocols, and identifier standards.'}
             </p>
           </div>
 
           {/* Quick Header CTA Actions */}
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleResetDemoData}
-              title="Reset sample types for MC202N, MC202L, GPS, Sensors, and SIMs"
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg shadow-2xs transition-colors cursor-pointer"
-            >
-              <RotateCcw size={13} className="text-slate-500" />
-              <span>Reset demo types</span>
-            </button>
+          {categoryFilter === 'device-models' ? (
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setModelResetSignal((n) => n + 1)}
+                title="Restore the 78 seeded device models"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg shadow-2xs transition-colors cursor-pointer"
+              >
+                <RotateCcw size={13} className="text-slate-500" />
+                <span>Reset to Seed Data</span>
+              </button>
 
-            <button
-              type="button"
-              onClick={handleExportCSV}
-              title="Export Model Types to CSV"
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg shadow-2xs transition-colors cursor-pointer"
-            >
-              <FileDown size={14} className="text-slate-500" />
-              <span>Export</span>
-            </button>
+              <button
+                type="button"
+                onClick={() => setModelImportSignal((n) => n + 1)}
+                title="Import Device Models from CSV"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg shadow-2xs transition-colors cursor-pointer"
+              >
+                <Upload size={13} className="text-slate-500" />
+                <span>Import CSV</span>
+              </button>
 
-            <button
-              type="button"
-              onClick={handleOpenAdd}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#FA8A63] hover:bg-[#e77a54] text-white text-xs font-semibold rounded-lg shadow-xs transition-colors cursor-pointer"
-            >
-              <Plus size={14} strokeWidth={2.5} />
-              <span>Add model type</span>
-            </button>
-          </div>
+              <button
+                type="button"
+                onClick={() => setModelExportSignal((n) => n + 1)}
+                title="Export Device Models to CSV"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg shadow-2xs transition-colors cursor-pointer"
+              >
+                <FileDown size={14} className="text-slate-500" />
+                <span>Export CSV</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setModelAddSignal((n) => n + 1)}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#FA8A63] hover:bg-[#e77a54] text-white text-xs font-semibold rounded-lg shadow-xs transition-colors cursor-pointer"
+              >
+                <Plus size={14} strokeWidth={2.5} />
+                <span>Add Model</span>
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleResetDemoData}
+                title="Reset sample types for MC202N, MC202L, GPS, Sensors, and SIMs"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg shadow-2xs transition-colors cursor-pointer"
+              >
+                <RotateCcw size={13} className="text-slate-500" />
+                <span>Reset demo types</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleExportCSV}
+                title="Export Model Types to CSV"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg shadow-2xs transition-colors cursor-pointer"
+              >
+                <FileDown size={14} className="text-slate-500" />
+                <span>Export</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleOpenAdd}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#FA8A63] hover:bg-[#e77a54] text-white text-xs font-semibold rounded-lg shadow-xs transition-colors cursor-pointer"
+              >
+                <Plus size={14} strokeWidth={2.5} />
+                <span>Add model type</span>
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* 2. Horizontal Category Tabs (All types, Devices, Sensors, SIMs) */}
+        {/* 2. Horizontal Category Tabs (Device Models + All types, Devices, Sensors, SIMs) */}
         <div className="flex items-center justify-between mt-4 border-b border-slate-200 overflow-x-auto scrollbar-none">
           <div className="flex items-center gap-6">
             {[
+              { id: 'device-models', label: 'Device Models', count: deviceModels.length },
               { id: 'All', label: 'All types', count: categoryCounts.all },
               { id: 'Device', label: 'Devices', count: categoryCounts.device },
               { id: 'Sensor', label: 'Sensors', count: categoryCounts.sensor },
@@ -1149,6 +1210,19 @@ export const ModelCategoryMasterContent: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {categoryFilter === 'device-models' ? (
+        <DeviceModelCatalogueSection
+          models={deviceModels}
+          onChangeModels={setDeviceModels}
+          onToast={showToast}
+          openAddSignal={modelAddSignal}
+          exportSignal={modelExportSignal}
+          resetSignal={modelResetSignal}
+          importSignal={modelImportSignal}
+        />
+      ) : (
+        <>
 
       {/* 3. Directory Inner Toolbar (Matches Drivers, Vehicles & Vendors) */}
       <div className="px-6 py-2.5 bg-white border-b border-slate-200/80 flex items-center justify-between gap-3 shrink-0">
@@ -1624,6 +1698,8 @@ export const ModelCategoryMasterContent: React.FC = () => {
           </div>
         </div>
       </div>
+        </>
+      )}
 
       {/* =========================================================================
           RIGHT-SIDE ADD / EDIT / VIEW DRAWER (~560px)
@@ -1790,7 +1866,7 @@ export const ModelCategoryMasterContent: React.FC = () => {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-semibold text-slate-800 mb-1">
-                      {formCategory === 'SIM' ? 'Vendor / Operator / Provider' : 'Vendor / Manufacturer'}{' '}
+                      Brand{' '}
                       <span className="text-rose-500">*</span>
                       <InfoTip text={MODEL_CATEGORY_TOOLTIPS.formManufacturer} align="left" />
                     </label>

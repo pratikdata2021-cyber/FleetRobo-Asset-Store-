@@ -725,7 +725,7 @@ export const SIM_COLUMNS: ModalColumnDef[] = [
   { key: 'renewalDate', label: 'Renewal / expiry date', minWidth: '155px' }
 ];
 
-// MD §3.1 — Mandatory Default Columns for Modal Connection (in exact order)
+// Mandatory Default Columns for Assets Connection (aligned with Create Mapping fields)
 export const MODAL_CONNECTION_DEFAULT_COLUMNS: ModalColumnDef[] = [
   {
     key: 'companyName',
@@ -734,89 +734,63 @@ export const MODAL_CONNECTION_DEFAULT_COLUMNS: ModalColumnDef[] = [
     tooltip: 'Client organization owning this mapping.'
   },
   {
-    key: 'id',
-    label: 'CONNECTION ID',
-    minWidth: '130px',
-    tooltip: 'System-generated identifier of this connection record. This is not a device IMEI or sensor ID.'
-  },
-  {
-    key: 'name',
-    label: 'CONNECTION NAME',
-    minWidth: '215px',
-    tooltip: 'Name given to this mapping by the user, usually referencing client, site or installed hardware.'
+    key: 'resourceAllocation',
+    label: 'RESOURCES',
+    minWidth: '220px',
+    tooltip: 'Mapped Vehicle, Driver, Fleet, Vendor, Place, and Equipment records from the client masters.'
   },
   {
     key: 'connectedHardware',
     label: 'CONNECTED HARDWARE',
     minWidth: '250px',
-    tooltip: 'The registered Device, Sensor and SIM units included in the connection. Click to inspect identifiers and models; does not show a topology diagram.'
+    tooltip: 'The registered Device, Sensor and SIM units included in the mapping. Click to inspect identifiers and models.'
   },
   {
     key: 'deviceCount',
     label: 'DEVICES',
-    minWidth: '105px',
-    tooltip: 'Number of Device records in this connection. Gateways are counted as Devices.'
+    minWidth: '100px',
+    tooltip: 'Number of Device records in this mapping. Gateways are counted as Devices.'
   },
   {
     key: 'sensorCount',
     label: 'SENSORS',
-    minWidth: '105px',
-    tooltip: 'Number of registered Sensors in this connection, including standalone sensors.'
+    minWidth: '100px',
+    tooltip: 'Number of registered Sensors in this mapping, including standalone sensors.'
   },
   {
     key: 'simCount',
     label: 'SIMS',
-    minWidth: '95px',
-    tooltip: 'Number of SIM records selected for this connection; each SIM is identified by its ICCID.'
+    minWidth: '90px',
+    tooltip: 'Number of SIM records selected for this mapping; each SIM is identified by its ICCID.'
   },
   {
     key: 'bindingCount',
     label: 'BINDINGS',
-    minWidth: '110px',
-    tooltip: 'Number of recorded pairwise relationships (e.g. Device→Device, Device→Sensor, Device→SIM), each with independent effective date and time.'
-  },
-  {
-    key: 'resourceAllocation',
-    label: 'RESOURCE ALLOCATIONS',
-    minWidth: '195px',
-    tooltip: 'Vehicle registration and optional driver contact associated with this connection. Resource records come from the client masters.'
+    minWidth: '105px',
+    tooltip: 'Number of recorded pairwise relationships (Resource→Hardware, Device→Sensor, Device→SIM), each with independent effective date and time.'
   },
   {
     key: 'status',
     label: 'STATUS',
-    minWidth: '140px',
-    tooltip: 'Connection lifecycle status. A connection may contain bindings with different periods or statuses; inspect Bindings for details.'
+    minWidth: '135px',
+    tooltip: 'Mapping lifecycle status. A mapping may contain bindings with different periods or statuses; inspect Bindings for details.'
   },
   {
     key: 'updatedAt',
     label: 'UPDATED ON',
     minWidth: '175px',
-    tooltip: "Most recent change to this connection or its membership/bindings, shown in the selected site's timezone."
+    tooltip: 'Most recent change to this mapping or its membership/bindings.'
   }
 ];
 
-// MD §3.2 — Optional Columns for Modal Connection (default hidden)
+// Optional Columns for Assets Connection (default hidden)
 export const MODAL_CONNECTION_OPTIONAL_COLUMNS: ModalColumnDef[] = [
-  {
-    key: 'primaryDevice',
-    label: 'PRIMARY DEVICE / MAIN HARDWARE',
-    minWidth: '200px',
-    optional: true,
-    tooltip: 'Primary selected hardware, if designated; other hardware remains in the same connection.'
-  },
-  {
-    key: 'primaryModel',
-    label: 'PRIMARY MODEL',
-    minWidth: '185px',
-    optional: true,
-    tooltip: 'Model associated with the displayed primary hardware; other models may also exist in this connection.'
-  },
   {
     key: 'hardwareIdentifiers',
     label: 'HARDWARE IDENTIFIERS',
     minWidth: '220px',
     optional: true,
-    tooltip: 'Unique unit identifiers of all registered hardware in this connection.'
+    tooltip: 'Unique unit identifiers of all registered hardware in this mapping.'
   },
   {
     key: 'bindingHealth',
@@ -847,13 +821,6 @@ export const MODAL_CONNECTION_OPTIONAL_COLUMNS: ModalColumnDef[] = [
     tooltip: "Summary only; open the Bindings list for each relationship's exact end date and time."
   },
   {
-    key: 'site',
-    label: 'SITE / LOCATION',
-    minWidth: '150px',
-    optional: true,
-    tooltip: 'Site context associated with the connection, if recorded.'
-  },
-  {
     key: 'createdBy',
     label: 'CREATED BY',
     minWidth: '140px',
@@ -865,28 +832,14 @@ export const MODAL_CONNECTION_OPTIONAL_COLUMNS: ModalColumnDef[] = [
     label: 'CREATED ON',
     minWidth: '175px',
     optional: true,
-    tooltip: 'When the connection record was first saved.'
+    tooltip: 'When the mapping record was first saved.'
   },
   {
     key: 'updatedBy',
     label: 'LAST UPDATED BY',
     minWidth: '145px',
     optional: true,
-    tooltip: 'Person who last modified this connection or its relationships.'
-  },
-  {
-    key: 'notes',
-    label: 'NOTES',
-    minWidth: '200px',
-    optional: true,
-    tooltip: 'Optional operational description captured on creation.'
-  },
-  {
-    key: 'hardwareVerification',
-    label: 'HARDWARE VERIFICATION',
-    minWidth: '170px',
-    optional: true,
-    tooltip: 'Hardware verification information, separate from mapping and registration.'
+    tooltip: 'Person who last modified this mapping or its relationships.'
   }
 ];
 
@@ -900,7 +853,7 @@ export const MODAL_CONNECTION_SELECT_TOOLTIP =
 export const MODAL_CONNECTION_ACTIONS_TOOLTIP =
   'View details, edit the mapping, or open additional permitted lifecycle actions.';
 
-// MD §4.1 & Screenshot — Default Columns for Resource Connection View
+// Default Columns for Resource Connection View (aligned with Create Mapping fields)
 export const RESOURCE_VIEW_DEFAULT_COLUMNS: ModalColumnDef[] = [
   {
     key: 'companyName',
@@ -909,51 +862,33 @@ export const RESOURCE_VIEW_DEFAULT_COLUMNS: ModalColumnDef[] = [
     tooltip: 'Client organization owning this resource allocation.'
   },
   {
-    key: 'id',
-    label: 'ALLOCATION ID',
-    minWidth: '115px',
-    tooltip: 'Unique ID of this resource-to-connection allocation, not the hardware identifier.'
-  },
-  {
-    key: 'connectionId',
-    label: 'CONNECTION ID',
-    minWidth: '115px',
-    tooltip: 'Connection whose selected hardware is associated with this resource.'
-  },
-  {
-    key: 'connectionName',
-    label: 'CONNECTION NAME',
-    minWidth: '190px',
-    tooltip: 'Name of the associated mapping.'
-  },
-  {
     key: 'resourceType',
     label: 'RESOURCE TYPE',
-    minWidth: '120px',
+    minWidth: '130px',
     tooltip: 'Type of existing client-owned resource being allocated.'
   },
   {
     key: 'resourceIdentifier',
     label: 'RESOURCE IDENTIFIER',
-    minWidth: '155px',
+    minWidth: '175px',
     tooltip: 'Lookup key of this client resource; vehicle uses registration number and driver uses mobile/contact number.'
   },
   {
     key: 'assignedHardware',
     label: 'ASSIGNED HARDWARE',
-    minWidth: '175px',
+    minWidth: '195px',
     tooltip: 'Summary of Devices, Sensors, and SIMs assigned under this allocation scope. Expand row to inspect exact relationships.'
   },
   {
     key: 'bindingCount',
     label: 'BINDINGS',
-    minWidth: '90px',
+    minWidth: '100px',
     tooltip: 'Count of hardware-to-hardware bindings active or scheduled within this allocation scope.'
   },
   {
     key: 'status',
     label: 'STATUS',
-    minWidth: '115px',
+    minWidth: '125px',
     tooltip: 'Allocation status derived from its validity period and validation.'
   }
 ];
@@ -972,13 +907,6 @@ export const RESOURCE_VIEW_OPTIONAL_COLUMNS: ModalColumnDef[] = [
     minWidth: '175px',
     optional: true,
     tooltip: 'Exact end of this allocation, when applicable.'
-  },
-  {
-    key: 'site',
-    label: 'SITE',
-    minWidth: '150px',
-    optional: true,
-    tooltip: 'Operational site context for this allocation.'
   },
   {
     key: 'assignedBy',
@@ -1973,7 +1901,7 @@ export function generateModalMasterSeedData(): {
         : 'mcat-06';
 
     devices.push({
-      id: `dev-focus-${(i + 1).toString().padStart(4, '0')}`,
+      id: `dev-seed-${(i + 1).toString().padStart(4, '0')}`,
       deviceId: `GTW-${numStr}`,
       name: `${cat} — ${mfg} ${modelObj.model}`,
       kind: cat === 'GPS' ? 'GPS Tracker' : cat === 'ADAS/DMS' ? 'ADAS/DMS Dashcam' : cat === 'CCTV' ? 'DVR / MDVR' : cat,
@@ -2320,7 +2248,7 @@ export function generateModalMasterSeedData(): {
     const modelTypeId = cat === 'IoT eSIM' ? 'mcat-12' : cat === 'M2M SIM' ? 'mcat-10' : 'mcat-11';
 
     sims.push({
-      id: `SIM-${1000 + i}`,
+      id: `SIM-gen-${2000 + i}`,
       iccid,
       msisdn: i % 7 !== 0 ? `+91 98100${i.toString().padStart(5, '0')}` : '',
       operator: op,
@@ -3985,6 +3913,46 @@ const SAVED_VIEWS_KEY = 'fleetrobo_modal_saved_views_v5';
 
 export type ModalMasterStore = ReturnType<typeof generateModalMasterSeedData>;
 
+function ensureUniqueEntityIds<T extends { id: string }>(items: T[], prefix: string): T[] {
+  const seen = new Set<string>();
+  let maxNum = 3000;
+  for (const item of items) {
+    const m = /^([A-Z]+)-(\d+)$/.exec(item.id || '');
+    if (m) {
+      const n = Number(m[2]);
+      if (!Number.isNaN(n) && n > maxNum) maxNum = n;
+    }
+  }
+  return items.map((item) => {
+    const rawId = item.id || `${prefix}-${++maxNum}`;
+    if (!seen.has(rawId)) {
+      seen.add(rawId);
+      return item.id ? item : { ...item, id: rawId };
+    }
+    let candidate = `${prefix}-${++maxNum}`;
+    while (seen.has(candidate)) {
+      candidate = `${prefix}-${++maxNum}`;
+    }
+    seen.add(candidate);
+    return { ...item, id: candidate };
+  });
+}
+
+export function getNextResourceAllocationId(
+  existing: ResourceAllocation[],
+  offset = 0
+): string {
+  let maxNum = 2040;
+  for (const alloc of existing) {
+    const m = /^RCA-(\d+)$/.exec(alloc.id || '');
+    if (m) {
+      const n = Number(m[1]);
+      if (!Number.isNaN(n) && n > maxNum) maxNum = n;
+    }
+  }
+  return `RCA-${maxNum + 1 + offset}`;
+}
+
 export function loadModalMasterStore(): ModalMasterStore {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -4001,8 +3969,14 @@ export function loadModalMasterStore(): ModalMasterStore {
       ) {
         return {
           ...parsed,
+          devices: ensureUniqueEntityIds(parsed.devices, 'DEV'),
+          sensors: ensureUniqueEntityIds(parsed.sensors, 'SEN'),
+          sims: ensureUniqueEntityIds(parsed.sims, 'SIM'),
+          connections: ensureUniqueEntityIds(parsed.connections, 'CON'),
+          hardwareBindings: ensureUniqueEntityIds(parsed.hardwareBindings, 'BND'),
+          resourceAllocations: ensureUniqueEntityIds(parsed.resourceAllocations, 'RCA'),
           resourceRelationships: Array.isArray(parsed.resourceRelationships)
-            ? parsed.resourceRelationships
+            ? ensureUniqueEntityIds(parsed.resourceRelationships, 'REL')
             : generateDefaultResourceRelationships()
         } as ModalMasterStore;
       }

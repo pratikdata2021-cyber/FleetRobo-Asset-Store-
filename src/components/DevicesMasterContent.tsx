@@ -66,6 +66,12 @@ import {
   loadCustomPlatformProtocols,
   saveCustomPlatformProtocol
 } from '../types/modelCategoryMaster';
+import {
+  DEVICE_MODEL_UPDATED_EVENT,
+  DeviceModelSeedRecord,
+  getDeviceModelReviewInfo,
+  loadDeviceModelStore
+} from '../data/deviceModelSeed';
 import { ColumnCataloguePopover } from './ColumnCataloguePopover';
 
 const GATEWAY_CATEGORIES: GatewayCategory[] = [
@@ -118,6 +124,9 @@ export const DevicesMasterContent: React.FC<{ currentCompany?: string }> = ({
   const [store, setStoreState] = useState(() => loadModalMasterStore());
   const [savedViews, setSavedViews] = useState<SavedModalView[]>(() => loadSavedModalViews());
   const [modelAccessTick, setModelAccessTick] = useState(0);
+  const [deviceModelMaster, setDeviceModelMaster] = useState<DeviceModelSeedRecord[]>(() =>
+    loadDeviceModelStore()
+  );
   const selfWriteRef = React.useRef(false);
 
   const setStore: React.Dispatch<React.SetStateAction<typeof store>> = (updater) => {
@@ -134,19 +143,27 @@ export const DevicesMasterContent: React.FC<{ currentCompany?: string }> = ({
 
   useEffect(() => {
     const handleSync = () => setModelAccessTick((t) => t + 1);
+    const handleDeviceModelSync = () => {
+      setDeviceModelMaster(loadDeviceModelStore());
+      setModelAccessTick((t) => t + 1);
+    };
     const handleStoreSync = () => {
       if (!selfWriteRef.current) {
         setStoreState(loadModalMasterStore());
       }
     };
     window.addEventListener('fleetrobo:model-access-updated', handleSync);
+    window.addEventListener(DEVICE_MODEL_UPDATED_EVENT, handleDeviceModelSync);
     window.addEventListener('fleetrobo:modal-store-updated', handleStoreSync);
     window.addEventListener('storage', handleSync);
+    window.addEventListener('storage', handleDeviceModelSync);
     window.addEventListener('storage', handleStoreSync);
     return () => {
       window.removeEventListener('fleetrobo:model-access-updated', handleSync);
+      window.removeEventListener(DEVICE_MODEL_UPDATED_EVENT, handleDeviceModelSync);
       window.removeEventListener('fleetrobo:modal-store-updated', handleStoreSync);
       window.removeEventListener('storage', handleSync);
+      window.removeEventListener('storage', handleDeviceModelSync);
       window.removeEventListener('storage', handleStoreSync);
     };
   }, []);
@@ -229,10 +246,17 @@ export const DevicesMasterContent: React.FC<{ currentCompany?: string }> = ({
     );
   }, [effectiveFormCompany, modelAccessTick]);
 
+  const seededCategories = useMemo<string[]>(() => {
+    return Array.from(new Set(deviceModelMaster.map((m) => m.deviceCategory)));
+  }, [deviceModelMaster]);
+
   const formEnabledCategories = useMemo<string[]>(() => {
-    const cats = Array.from(new Set(formEnabledDeviceModels.map((m) => m.typeName)));
-    return cats.length > 0 ? cats : GATEWAY_CATEGORIES;
-  }, [formEnabledDeviceModels]);
+    const enabledCats = Array.from(new Set(formEnabledDeviceModels.map((m) => m.typeName)));
+    const combined = Array.from(
+      new Set([...seededCategories, ...(enabledCats.length > 0 ? enabledCats : GATEWAY_CATEGORIES)])
+    );
+    return combined;
+  }, [seededCategories, formEnabledDeviceModels]);
   const [formManufacturer, setFormManufacturer] = useState(
     () => enabledDeviceModels[0]?.manufacturer || 'Teltonika'
   );
@@ -320,47 +344,109 @@ export const DevicesMasterContent: React.FC<{ currentCompany?: string }> = ({
     saveSavedModalViews(savedViews);
   }, [savedViews]);
 
-  // Derived form options from formEnabledDeviceModels for the selected category
+  // Derived form options from seeded Device Model master + formEnabledDeviceModels for the selected category
+  const seededModelsForSelectedCategory = useMemo(() => {
+    const normKind = (formKind || '').trim().toLowerCase();
+    return deviceModelMaster.filter((m) => m.deviceCategory.toLowerCase() === normKind);
+  }, [deviceModelMaster, formKind]);
+
   const modelsForSelectedCategory = useMemo(() => {
     return formEnabledDeviceModels.filter((m) => m.typeName === formKind);
   }, [formEnabledDeviceModels, formKind]);
 
   const availableManufacturers = useMemo<string[]>(() => {
-    if (modelsForSelectedCategory.length > 0) {
-      return Array.from(new Set(modelsForSelectedCategory.map((m) => m.manufacturer)));
-    }
-    const catDef = DEVICE_CATALOGUE[formKind];
-    return catDef ? Object.keys(catDef.manufacturers) : ALL_MANUFACTURERS;
-  }, [modelsForSelectedCategory, formKind]);
+    const seededBrands = seededModelsForSelectedCategory.map((m) => m.brand);
+    const enabledBrands = modelsForSelectedCategory.map((m) => m.manufacturer);
+    const catBrands = DEVICE_CATALOGUE[formKind]
+      ? Object.keys(DEVICE_CATALOGUE[formKind].manufacturers)
+      : [];
+    const merged = Array.from(new Set([...seededBrands, ...enabledBrands, ...catBrands])).filter(Boolean);
+    if (merged.length > 0) return merged;
+    return ALL_MANUFACTURERS;
+  }, [seededModelsForSelectedCategory, modelsForSelectedCategory, formKind]);
 
   const availableModels = useMemo<
-    { model: string; defaultProtocol: string; channelCount: number }[]
+    { model: string; defaultProtocol: string; channelCount: number; bluetoothSupport?: string }[]
   >(() => {
-    if (modelsForSelectedCategory.length > 0) {
-      const byMfg = modelsForSelectedCategory.filter((m) => m.manufacturer === formManufacturer);
-      const list = byMfg.length > 0 ? byMfg : modelsForSelectedCategory;
-      return list.map((m) => ({
-        model: m.modelReference,
+    const normMfg = (formManufacturer || '').trim().toLowerCase();
+    const seededByMfg = seededModelsForSelectedCategory.filter(
+      (m) => m.brand.toLowerCase() === normMfg
+    );
+    const enabledByMfg = modelsForSelectedCategory.filter(
+      (m) => m.manufacturer.toLowerCase() === normMfg
+    );
+    const catModels = DEVICE_CATALOGUE[formKind]?.manufacturers[formManufacturer]?.models || [];
+
+    const seen = new Set<string>();
+    const combined: {
+      model: string;
+      defaultProtocol: string;
+      channelCount: number;
+      bluetoothSupport?: string;
+    }[] = [];
+
+    seededByMfg.forEach((m) => {
+      const key = m.model.trim().toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        combined.push({
+          model: m.model,
+          defaultProtocol: formKind === 'Video Telematics' ? 'Metta' : 'MQTT',
+          channelCount: 4,
+          bluetoothSupport: m.bluetoothSupport,
+        });
+      }
+    });
+
+    enabledByMfg.forEach((m) => {
+      const key = (m.modelReference || '').trim().toLowerCase();
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        combined.push({
+          model: m.modelReference,
+          defaultProtocol: 'MQTT',
+          channelCount: 4,
+        });
+      }
+    });
+
+    catModels.forEach((m) => {
+      const key = m.model.trim().toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        combined.push(m);
+      }
+    });
+
+    if (combined.length > 0) return combined;
+
+    if (seededModelsForSelectedCategory.length > 0) {
+      return seededModelsForSelectedCategory.map((m) => ({
+        model: m.model,
         defaultProtocol: 'MQTT',
-        channelCount: 4
+        channelCount: 4,
+        bluetoothSupport: m.bluetoothSupport,
       }));
     }
-    const catDef = DEVICE_CATALOGUE[formKind];
-    if (!catDef) {
-      return [{ model: formModelText || 'Standard', defaultProtocol: 'MQTT', channelCount: 1 }];
-    }
-    return (
-      catDef.manufacturers[formManufacturer]?.models ||
-      catDef.manufacturers[availableManufacturers[0]]?.models ||
-      []
-    );
+
+    return [{ model: formModelText || 'Standard', defaultProtocol: 'MQTT', channelCount: 1 }];
   }, [
+    seededModelsForSelectedCategory,
     modelsForSelectedCategory,
     formManufacturer,
     formKind,
-    formModelText,
-    availableManufacturers
+    formModelText
   ]);
+
+  const selectedSeededDeviceModel = useMemo(() => {
+    const normMfg = (formManufacturer || '').trim().toLowerCase();
+    const normModel = (formModelText || '').trim().toLowerCase();
+    return (
+      seededModelsForSelectedCategory.find(
+        (m) => m.brand.toLowerCase() === normMfg && m.model.toLowerCase() === normModel
+      ) || null
+    );
+  }, [seededModelsForSelectedCategory, formManufacturer, formModelText]);
 
   const selectedModelSpec = useMemo(() => {
     return (
@@ -600,10 +686,27 @@ export const DevicesMasterContent: React.FC<{ currentCompany?: string }> = ({
     setActiveDrawer('form');
   };
 
-  // Dynamic category change in form
+  // Dynamic category change in form (Category -> Brand -> Model)
   const handleCategoryChange = (newKind: GatewayCategory) => {
     setFormKind(newKind);
+    const seededForCat = deviceModelMaster.filter(
+      (m) => m.deviceCategory.toLowerCase() === newKind.trim().toLowerCase()
+    );
     const matchingEnabled = formEnabledDeviceModels.filter((m) => m.typeName === newKind);
+
+    if (seededForCat.length > 0) {
+      const firstSeed = seededForCat[0];
+      setFormManufacturer(firstSeed.brand);
+      setFormModelText(firstSeed.model);
+      const presets = getDeviceModePresets(newKind);
+      setFormModes(presets[0] ? [presets[0]] : ['Standard']);
+      setFormProtocols(
+        resolveDefaultProtocolsForModel(undefined, newKind, undefined, newKind === 'Video Telematics' ? 'Metta' : 'Codec8')
+      );
+      setFormChannelCount(4);
+      return;
+    }
+
     if (matchingEnabled.length > 0) {
       const first = matchingEnabled[0];
       const presets = getDeviceModePresets(first.typeName, first.deviceFunction);
@@ -641,9 +744,18 @@ export const DevicesMasterContent: React.FC<{ currentCompany?: string }> = ({
     }
   };
 
-  // Dynamic manufacturer change in form
+  // Dynamic manufacturer change in form (Brand -> Model)
   const handleManufacturerChange = (newMfg: string) => {
     setFormManufacturer(newMfg);
+    const seededForBrand = deviceModelMaster.filter(
+      (m) =>
+        m.deviceCategory.toLowerCase() === formKind.trim().toLowerCase() &&
+        m.brand.toLowerCase() === newMfg.trim().toLowerCase()
+    );
+    if (seededForBrand.length > 0) {
+      setFormModelText(seededForBrand[0].model);
+      return;
+    }
     const matchingEnabled = formEnabledDeviceModels.filter(
       (m) => m.typeName === formKind && m.manufacturer === newMfg
     );
@@ -813,7 +925,7 @@ export const DevicesMasterContent: React.FC<{ currentCompany?: string }> = ({
       showToast(`Device ${trimmedId} updated.`);
     } else {
       const newRecord: DeviceRecord = {
-        id: `dev-focus-${Date.now()}`,
+        id: `dev-focus-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
         deviceId: trimmedId,
         name: trimmedName,
         kind: formKind,
@@ -2243,6 +2355,21 @@ export const DevicesMasterContent: React.FC<{ currentCompany?: string }> = ({
                           </option>
                         ))}
                       </select>
+                      {selectedSeededDeviceModel && (
+                        <div className="mt-1 flex items-center gap-2 text-[11px] text-[#5c6b7a]">
+                          <span>
+                            Bluetooth:{' '}
+                            <strong className="text-[#17212b]">
+                              {selectedSeededDeviceModel.bluetoothSupport}
+                            </strong>
+                          </span>
+                          {getDeviceModelReviewInfo(selectedSeededDeviceModel).needsReview && (
+                            <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-semibold">
+                              {getDeviceModelReviewInfo(selectedSeededDeviceModel).badgeText}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                     <div>
                       <FieldLabel

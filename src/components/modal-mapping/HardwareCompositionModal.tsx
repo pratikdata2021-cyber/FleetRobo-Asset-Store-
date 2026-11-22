@@ -8,7 +8,6 @@ import {
   Smartphone,
   AlertTriangle,
   CheckCircle2,
-  ChevronDown,
   Infinity as InfinityIcon,
   Clock,
   Link2
@@ -60,6 +59,7 @@ interface HardwareCompositionModalProps {
   mode: 'add-hardware' | 'edit-binding';
   category: HardwareCategory;
   initialParentId?: string | null;
+  parentResourceLabel?: string | null;
   editingBinding?: HardwareBinding | null;
   connId: string;
   targetClient: string;
@@ -86,6 +86,7 @@ export const HardwareCompositionModal: React.FC<HardwareCompositionModalProps> =
   mode,
   category,
   initialParentId = null,
+  parentResourceLabel = null,
   editingBinding = null,
   connId,
   targetClient,
@@ -118,38 +119,17 @@ export const HardwareCompositionModal: React.FC<HardwareCompositionModalProps> =
     return '';
   });
 
-  // Model selector state (searchable combobox)
+  // Client-enabled models (used for per-unit metadata resolution & FullCreate defaults)
   const categoryModels = useMemo(
     () => enabledModels.filter((m) => m.category === category),
     [enabledModels, category]
   );
-  const [modelSearch, setModelSearch] = useState('');
-  const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const [selectedModelId, setSelectedModelId] = useState<string>(() => categoryModels[0]?.id || '');
-
-  const filteredModels = useMemo(() => {
-    const q = modelSearch.trim().toLowerCase();
-    if (!q) return categoryModels;
-    return categoryModels.filter((m) =>
-      [m.typeName, m.manufacturer, m.modelReference, m.identifierType, m.deviceFunction]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-        .includes(q)
-    );
-  }, [categoryModels, modelSearch]);
 
   const activeModelDef = useMemo(
     () => categoryModels.find((m) => m.id === selectedModelId) || categoryModels[0] || null,
     [categoryModels, selectedModelId]
   );
-
-  const activeIdentifierTypes = useMemo(
-    () => getRecordIdentifierTypes(activeModelDef),
-    [activeModelDef]
-  );
-  const activeIdentifierLabel =
-    activeIdentifierTypes.join(' / ') || activeModelDef?.identifierType || 'ID';
 
   // Hardware search & selection
   const [idSearchQuery, setIdSearchQuery] = useState('');
@@ -204,19 +184,22 @@ export const HardwareCompositionModal: React.FC<HardwareCompositionModalProps> =
   );
   const [localError, setLocalError] = useState<string | null>(null);
 
-  // Track effective local pool (includes any inline newly registered unit)
-  const effectiveDevices = useMemo(
-    () => (pendingRegisteredUnit?.device ? [pendingRegisteredUnit.device, ...localDevices] : localDevices),
-    [pendingRegisteredUnit, localDevices]
-  );
-  const effectiveSensors = useMemo(
-    () => (pendingRegisteredUnit?.sensor ? [pendingRegisteredUnit.sensor, ...localSensors] : localSensors),
-    [pendingRegisteredUnit, localSensors]
-  );
-  const effectiveSims = useMemo(
-    () => (pendingRegisteredUnit?.sim ? [pendingRegisteredUnit.sim, ...localSims] : localSims),
-    [pendingRegisteredUnit, localSims]
-  );
+  // Track effective local pool (includes any inline newly registered unit, deduplicated by id)
+  const effectiveDevices = useMemo(() => {
+    const d = pendingRegisteredUnit?.device;
+    if (!d || localDevices.some((x) => x.id === d.id)) return localDevices;
+    return [d, ...localDevices];
+  }, [pendingRegisteredUnit, localDevices]);
+  const effectiveSensors = useMemo(() => {
+    const s = pendingRegisteredUnit?.sensor;
+    if (!s || localSensors.some((x) => x.id === s.id)) return localSensors;
+    return [s, ...localSensors];
+  }, [pendingRegisteredUnit, localSensors]);
+  const effectiveSims = useMemo(() => {
+    const sim = pendingRegisteredUnit?.sim;
+    if (!sim || localSims.some((x) => x.id === sim.id)) return localSims;
+    return [sim, ...localSims];
+  }, [pendingRegisteredUnit, localSims]);
 
   // Parent device capability metadata
   const parentMember = useMemo(
@@ -268,104 +251,159 @@ export const HardwareCompositionModal: React.FC<HardwareCompositionModalProps> =
     return { activeBindings, activeConns };
   };
 
-  // Matching client-owned hardware units
+  // Matching client-owned hardware units directly across all registered models
   const matchingUnits = useMemo(() => {
-    if (isEditingBinding || !activeModelDef) return [];
+    if (isEditingBinding) return [];
     const q = idSearchQuery.trim().toLowerCase();
     const clientLower = targetClient.trim().toLowerCase();
+    const seen = new Set<string>();
 
     if (category === 'Device') {
       return effectiveDevices
         .filter((d) => {
           if ((d.company || '').trim().toLowerCase() !== clientLower) return false;
-          const matchesModel =
-            d.modelTypeId === activeModelDef.id ||
-            d.kind.toLowerCase().includes(activeModelDef.typeName.toLowerCase()) ||
-            (activeModelDef.modelReference &&
-              d.modelText.toLowerCase().includes(activeModelDef.modelReference.toLowerCase()));
-          if (!matchesModel) return false;
-          const ident = resolveHardwareIdentifierValue(d, 'Device', activeModelDef.identifierType);
-          return (
+          if (seen.has(d.id)) return false;
+          const matchesQuery =
             !q ||
-            ident.toLowerCase().includes(q) ||
-            d.deviceId.toLowerCase().includes(q) ||
-            d.serial.toLowerCase().includes(q) ||
-            d.imei.toLowerCase().includes(q) ||
-            d.name.toLowerCase().includes(q)
-          );
+            [d.deviceId, d.serial, d.imei, d.name, d.kind, d.manufacturer, d.modelText]
+              .filter(Boolean)
+              .join(' ')
+              .toLowerCase()
+              .includes(q);
+          if (!matchesQuery) return false;
+          seen.add(d.id);
+          return true;
         })
-        .slice(0, 18)
-        .map((d) => ({
-          hardwareId: d.id,
-          code: d.deviceId,
-          identifierValue: resolveHardwareIdentifierValue(d, 'Device', activeModelDef.identifierType),
-          manufacturer: d.manufacturer,
-          modelText: d.modelText,
-          subtitle: `${d.deviceId} · ${d.manufacturer} ${d.modelText}`,
-          status: d.hardwareLifecycle,
-          simSlots: d.simSlots || 0
-        }));
+        .slice(0, 24)
+        .map((d) => {
+          const matchedModel =
+            categoryModels.find(
+              (m) =>
+                m.id === d.modelTypeId ||
+                d.kind.toLowerCase().includes(m.typeName.toLowerCase()) ||
+                (m.modelReference && d.modelText.toLowerCase().includes(m.modelReference.toLowerCase()))
+            ) || null;
+          const identTypes = matchedModel ? getRecordIdentifierTypes(matchedModel) : [];
+          const primaryIdentType = identTypes[0] || matchedModel?.identifierType || (d.imei ? 'IMEI' : 'Device ID');
+          const identifierValue =
+            resolveHardwareIdentifierValue(d, 'Device', primaryIdentType) || d.imei || d.serial || d.deviceId;
+          const modelLabel = matchedModel
+            ? [matchedModel.typeName, matchedModel.manufacturer, matchedModel.modelReference].filter(Boolean).join(' · ')
+            : [d.kind, d.manufacturer, d.modelText].filter(Boolean).join(' · ');
+
+          return {
+            hardwareId: d.id,
+            code: d.deviceId,
+            identifierType: primaryIdentType,
+            identifierValue,
+            modelTypeId: matchedModel?.id || d.modelTypeId || '',
+            modelLabel,
+            modelDef: matchedModel,
+            manufacturer: d.manufacturer,
+            modelText: d.modelText,
+            subtitle: `${d.deviceId} · ${d.manufacturer} ${d.modelText}`,
+            status: d.hardwareLifecycle,
+            simSlots: d.simSlots || 0
+          };
+        });
     }
 
     if (category === 'Sensor') {
       return effectiveSensors
         .filter((s) => {
           if ((s.company || '').trim().toLowerCase() !== clientLower) return false;
-          const matchesModel =
-            s.modelTypeId === activeModelDef.id ||
-            s.kind.toLowerCase().includes(activeModelDef.typeName.toLowerCase().replace(' level', ''));
-          if (!matchesModel) return false;
-          const ident = resolveHardwareIdentifierValue(s, 'Sensor', activeModelDef.identifierType);
-          return (
+          if (seen.has(s.id)) return false;
+          const matchesQuery =
             !q ||
-            ident.toLowerCase().includes(q) ||
-            s.deviceId.toLowerCase().includes(q) ||
-            s.serial.toLowerCase().includes(q) ||
-            s.name.toLowerCase().includes(q)
-          );
+            [s.deviceId, s.serial, s.name, s.kind, s.manufacturer, s.modelText]
+              .filter(Boolean)
+              .join(' ')
+              .toLowerCase()
+              .includes(q);
+          if (!matchesQuery) return false;
+          seen.add(s.id);
+          return true;
         })
-        .slice(0, 18)
-        .map((s) => ({
-          hardwareId: s.id,
-          code: s.deviceId,
-          identifierValue: resolveHardwareIdentifierValue(s, 'Sensor', activeModelDef.identifierType),
-          manufacturer: s.manufacturer,
-          modelText: s.modelText,
-          subtitle: `${s.deviceId} · ${s.manufacturer} ${s.modelText}`,
-          status: s.hardwareLifecycle,
-          simSlots: 0
-        }));
+        .slice(0, 24)
+        .map((s) => {
+          const matchedModel =
+            categoryModels.find(
+              (m) =>
+                m.id === s.modelTypeId ||
+                s.kind.toLowerCase().includes(m.typeName.toLowerCase().replace(' level', ''))
+            ) || null;
+          const identTypes = matchedModel ? getRecordIdentifierTypes(matchedModel) : [];
+          const primaryIdentType = identTypes[0] || matchedModel?.identifierType || 'Sensor ID';
+          const identifierValue =
+            resolveHardwareIdentifierValue(s, 'Sensor', primaryIdentType) || s.deviceId || s.serial;
+          const modelLabel = matchedModel
+            ? [matchedModel.typeName, matchedModel.manufacturer, matchedModel.modelReference].filter(Boolean).join(' · ')
+            : [s.kind, s.manufacturer, s.modelText].filter(Boolean).join(' · ');
+
+          return {
+            hardwareId: s.id,
+            code: s.deviceId,
+            identifierType: primaryIdentType,
+            identifierValue,
+            modelTypeId: matchedModel?.id || s.modelTypeId || '',
+            modelLabel,
+            modelDef: matchedModel,
+            manufacturer: s.manufacturer,
+            modelText: s.modelText,
+            subtitle: `${s.deviceId} · ${s.manufacturer} ${s.modelText}`,
+            status: s.hardwareLifecycle,
+            simSlots: 0
+          };
+        });
     }
 
     return effectiveSims
       .filter((sim) => {
         if ((sim.owner || '').trim().toLowerCase() !== clientLower) return false;
-        const matchesModel =
-          sim.modelTypeId === activeModelDef.id ||
-          (sim.category || '').toLowerCase() === activeModelDef.typeName.toLowerCase();
-        if (!matchesModel) return false;
-        return (
+        if (seen.has(sim.id)) return false;
+        const matchesQuery =
           !q ||
-          sim.iccid.toLowerCase().includes(q) ||
-          sim.id.toLowerCase().includes(q) ||
-          sim.msisdn.toLowerCase().includes(q) ||
-          sim.operator.toLowerCase().includes(q)
-        );
+          [sim.iccid, sim.id, sim.msisdn, sim.operator, sim.category, sim.formFactor, sim.plan]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase()
+            .includes(q);
+        if (!matchesQuery) return false;
+        seen.add(sim.id);
+        return true;
       })
-      .slice(0, 18)
-      .map((sim) => ({
-        hardwareId: sim.id,
-        code: sim.id,
-        identifierValue: sim.iccid,
-        manufacturer: sim.operator,
-        modelText: `${sim.formFactor} · ${sim.plan}`,
-        subtitle: `${sim.operator} · ${sim.formFactor} · ${sim.msisdn || 'No MSISDN'}`,
-        status: sim.status,
-        simSlots: 0
-      }));
+      .slice(0, 24)
+      .map((sim) => {
+        const matchedModel =
+          categoryModels.find(
+            (m) =>
+              m.id === sim.modelTypeId ||
+              (sim.category || '').toLowerCase() === m.typeName.toLowerCase()
+          ) || null;
+        const identTypes = matchedModel ? getRecordIdentifierTypes(matchedModel) : [];
+        const primaryIdentType = identTypes[0] || matchedModel?.identifierType || 'ICCID';
+        const modelLabel = matchedModel
+          ? [matchedModel.typeName, matchedModel.manufacturer, matchedModel.modelReference].filter(Boolean).join(' · ')
+          : [sim.category || 'SIM', sim.operator, sim.formFactor].filter(Boolean).join(' · ');
+
+        return {
+          hardwareId: sim.id,
+          code: sim.id,
+          identifierType: primaryIdentType,
+          identifierValue: sim.iccid || sim.id,
+          modelTypeId: matchedModel?.id || sim.modelTypeId || '',
+          modelLabel,
+          modelDef: matchedModel,
+          manufacturer: sim.operator,
+          modelText: `${sim.formFactor} · ${sim.plan}`,
+          subtitle: `${sim.operator} · ${sim.formFactor} · ${sim.msisdn || 'No MSISDN'}`,
+          status: sim.status,
+          simSlots: 0
+        };
+      });
   }, [
     isEditingBinding,
-    activeModelDef,
+    categoryModels,
     idSearchQuery,
     targetClient,
     category,
@@ -403,30 +441,29 @@ export const HardwareCompositionModal: React.FC<HardwareCompositionModalProps> =
     const fs = effectiveSims.find(
       (s) => (s.owner || '').trim().toLowerCase() !== clientLower && s.iccid.toLowerCase() === q
     );
-    return fs ? `SIM ${activeIdentifierLabel || 'ICCID'} "${idSearchQuery.trim()}" belongs to ${fs.owner}. Cross-client selection is blocked.` : null;
-  }, [idSearchQuery, isEditingBinding, targetClient, category, effectiveDevices, effectiveSensors, effectiveSims, activeIdentifierLabel]);
+    return fs ? `SIM ICCID "${idSearchQuery.trim()}" belongs to ${fs.owner}. Cross-client selection is blocked.` : null;
+  }, [idSearchQuery, isEditingBinding, targetClient, category, effectiveDevices, effectiveSensors, effectiveSims]);
 
-  // Sensor standalone check
+  // Sensor standalone / resource-level check
+  const selectedUnitModelDef = selectedUnitSummary?.modelDef || null;
   const sensorRequiresParent =
     category === 'Sensor' &&
-    activeModelDef?.connectionMode === 'Gateway-connected' &&
-    !parentHardwareId;
+    selectedUnitModelDef?.connectionMode === 'Gateway-connected' &&
+    !parentHardwareId &&
+    !parentResourceLabel;
 
   // Build candidate membership & validate binding pair live
   const selectedNewMember: HardwareMembership | null = useMemo(() => {
     if (isEditingBinding && editingBinding) {
       return members.find((m) => m.hardwareId === editingBinding.toHardwareId) || null;
     }
-    if (!selectedUnitSummary || !activeModelDef) return null;
-    const modelLabel = [activeModelDef.typeName, activeModelDef.manufacturer, activeModelDef.modelReference]
-      .filter(Boolean)
-      .join(' · ');
+    if (!selectedUnitSummary) return null;
     return {
       hardwareId: selectedUnitSummary.hardwareId,
       category,
-      modelTypeId: activeModelDef.id,
-      modelLabel,
-      identifierType: activeIdentifierTypes[0] || activeModelDef.identifierType,
+      modelTypeId: selectedUnitSummary.modelTypeId,
+      modelLabel: selectedUnitSummary.modelLabel,
+      identifierType: selectedUnitSummary.identifierType,
       identifierValue:
         category === 'Device' && selectedUnitSummary.code
           ? `${selectedUnitSummary.code}`
@@ -434,7 +471,7 @@ export const HardwareCompositionModal: React.FC<HardwareCompositionModalProps> =
       registrationStatus: selectedUnitSummary.status,
       isPrimary: members.length === 0 && !parentHardwareId
     };
-  }, [isEditingBinding, editingBinding, members, selectedUnitSummary, activeModelDef, activeIdentifierTypes, category, parentHardwareId]);
+  }, [isEditingBinding, editingBinding, members, selectedUnitSummary, category, parentHardwareId]);
 
   const liveValidation = useMemo(() => {
     if (!parentHardwareId) {
@@ -444,7 +481,7 @@ export const HardwareCompositionModal: React.FC<HardwareCompositionModalProps> =
       if (sensorRequiresParent) {
         return {
           errors: [
-            `${activeModelDef?.typeName} is configured as Gateway-connected in Model Category Master. Select a parent Device.`
+            `${selectedUnitModelDef?.typeName || selectedUnitSummary?.modelLabel || 'This Sensor'} is configured as Gateway-connected in Model Category Master. Select a parent Device.`
           ],
           warnings: []
         };
@@ -488,7 +525,8 @@ export const HardwareCompositionModal: React.FC<HardwareCompositionModalProps> =
     parentHardwareId,
     category,
     sensorRequiresParent,
-    activeModelDef,
+    selectedUnitModelDef,
+    selectedUnitSummary,
     isEditingBinding,
     editingBinding,
     selectedHardwareId,
@@ -675,7 +713,13 @@ export const HardwareCompositionModal: React.FC<HardwareCompositionModalProps> =
                 <h3 className="text-[14px] font-bold text-slate-900 truncate">
                   {isEditingBinding
                     ? `Edit Binding · ${editingBinding?.id}`
-                    : `Add ${category}${parentMember ? ` under ${parentMember.identifierValue}` : ''}`}
+                    : `Add ${category}${
+                        parentMember
+                          ? ` under ${parentMember.identifierValue}`
+                          : parentResourceLabel
+                          ? ` for ${parentResourceLabel}`
+                          : ''
+                      }`}
                 </h3>
               </div>
               <p className="text-[11px] text-slate-500 truncate">
@@ -701,16 +745,16 @@ export const HardwareCompositionModal: React.FC<HardwareCompositionModalProps> =
             </div>
           )}
 
-          {/* Connected To / Parent Hardware Selection */}
-          {(((category === 'SIM' ? simParentMembers.length > 0 : deviceMembers.length > 0)) || isEditingBinding) && (
+          {/* Connected To / Upper Layer Selection */}
+          {(parentResourceLabel || ((category === 'SIM' ? simParentMembers.length > 0 : category === 'Sensor' ? deviceMembers.length > 0 : false)) || isEditingBinding) && (
             <div className="p-3 rounded-xl border border-slate-200 bg-slate-50/70 space-y-2">
               <div className="flex items-center justify-between">
                 <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wide flex items-center gap-1.5">
                   <Link2 className="w-3.5 h-3.5 text-[#F26522]" />
-                  Connected To (Parent Hardware)
+                  Connected To (Upper Layer)
                 </label>
                 <MappingInfoTooltip
-                  text="Preselected automatically when opened from a Device or Sensor row. Sensors can also be standalone if enabled by their model."
+                  text="Bindings always connect to the layer immediately above (Resource → Device/Sensor, or Device → Sensor/SIM)."
                   align="right"
                 />
               </div>
@@ -730,6 +774,17 @@ export const HardwareCompositionModal: React.FC<HardwareCompositionModalProps> =
                   </div>
                   <span className="text-[10.5px] font-semibold text-[#F26522] shrink-0">Preselected</span>
                 </div>
+              ) : parentResourceLabel && !isEditingBinding ? (
+                <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-white border border-[#F26522]/30">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Link2 className="w-4 h-4 text-[#F26522] shrink-0" />
+                    <div className="min-w-0">
+                      <div className="font-bold text-slate-900 truncate">{parentResourceLabel}</div>
+                      <div className="text-[10.5px] text-slate-500 truncate">Resource Layer (Direct {category} Binding)</div>
+                    </div>
+                  </div>
+                  <span className="text-[10.5px] font-semibold text-[#F26522] shrink-0">Preselected</span>
+                </div>
               ) : (
                 <select
                   value={parentHardwareId}
@@ -739,9 +794,6 @@ export const HardwareCompositionModal: React.FC<HardwareCompositionModalProps> =
                   }}
                   className="w-full h-9 px-2.5 rounded-lg border border-slate-200 bg-white font-medium text-slate-800"
                 >
-                  {category === 'Device' && !isEditingBinding && (
-                    <option value="">Root / Primary Device (No Parent)</option>
-                  )}
                   {category === 'Sensor' && !isEditingBinding && (
                     <option value="">Standalone Sensor (No Parent Device)</option>
                   )}
@@ -760,247 +812,165 @@ export const HardwareCompositionModal: React.FC<HardwareCompositionModalProps> =
           {/* Hardware Selection Section (Hidden when only editing an existing binding) */}
           {!isEditingBinding && (
             <div className="space-y-3">
-              {categoryModels.length === 0 ? (
-                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[12px]">
-                  No <strong>{category}</strong> models are currently enabled for <strong>{targetClient}</strong> in Platform Admin → Company Management → Model Access.
+              {/* Direct Hardware Search */}
+              <div>
+                <div className="flex items-center justify-between mb-1 gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <label className="font-semibold text-slate-800">
+                      Search Registered {category} <span className="text-rose-600">*</span>
+                    </label>
+                    <MappingInfoTooltip text={MODAL_FIELD_TOOLTIPS.mapping.searchIdentifier} align="left" />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowRegisterInline(true)}
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#F26522] hover:underline cursor-pointer shrink-0"
+                  >
+                    <Plus className="w-3 h-3" /> Add New {category}
+                  </button>
                 </div>
-              ) : (
-                <>
-                  {/* Searchable Enabled Model Type Dropdown (Full Width) */}
-                  <div className="relative">
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="font-semibold text-slate-800">
-                        Enabled {category} Model <span className="text-rose-600">*</span>
-                      </label>
-                      <MappingInfoTooltip text={MODAL_FIELD_TOOLTIPS.mapping.enabledModelType} align="right" />
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    autoFocus
+                    value={idSearchQuery}
+                    onChange={(e) => {
+                      setIdSearchQuery(e.target.value);
+                      setSelectedHardwareId('');
+                      setShowRegisterInline(false);
+                    }}
+                    placeholder={
+                      category === 'Device'
+                        ? 'Search Device ID, IMEI, Serial, or Model (e.g. GTW-9032, MettaX)...'
+                        : category === 'Sensor'
+                        ? 'Search Sensor ID, Serial, or Model (e.g. SENS-10017, Fuel)...'
+                        : 'Search SIM ICCID, MSISDN, or Operator (e.g. 89918610431245100006)...'
+                    }
+                    className="w-full h-9 pl-8 pr-8 rounded-lg border border-slate-200 bg-white focus:outline-none focus:border-[#F26522]"
+                  />
+                  {idSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIdSearchQuery('');
+                        setSelectedHardwareId('');
+                      }}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {crossTenantConflict && (
+                <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-[11px] flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <span>{crossTenantConflict}</span>
+                </div>
+              )}
+
+              {/* Search Results List */}
+              <div className="border border-slate-200 rounded-xl bg-white max-h-56 overflow-y-auto divide-y divide-slate-100">
+                {matchingUnits.length === 0 ? (
+                  <div className="p-4 text-center space-y-2">
+                    <div className="text-[11.5px] text-slate-500">
+                      {idSearchQuery.trim()
+                        ? `No registered ${category} matching "${idSearchQuery}" found under `
+                        : `No registered ${category} found under `}
+                      <strong className="text-slate-700">{targetClient}</strong>.
                     </div>
                     <button
                       type="button"
-                      onClick={() => setModelDropdownOpen((v) => !v)}
-                      className="w-full h-9 px-3 rounded-lg border border-slate-200 bg-white text-left flex items-center justify-between gap-2 hover:border-slate-300 cursor-pointer"
+                      onClick={() => setShowRegisterInline(true)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#F26522] hover:bg-[#d95417] text-white text-[11px] font-semibold cursor-pointer"
                     >
-                      <span className="truncate font-medium text-slate-900">
-                        {activeModelDef
-                          ? [activeModelDef.typeName, activeModelDef.manufacturer, activeModelDef.modelReference]
-                              .filter(Boolean)
-                              .join(' · ')
-                          : 'Select model type...'}
-                      </span>
-                      <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <Plus className="w-3.5 h-3.5" /> Register {category} for {targetClient}
                     </button>
-
-                    {modelDropdownOpen && (
-                      <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-30 overflow-hidden">
-                        <div className="p-2 border-b border-slate-100">
-                          <div className="relative">
-                            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                            <input
-                              type="text"
-                              autoFocus
-                              value={modelSearch}
-                              onChange={(e) => setModelSearch(e.target.value)}
-                              placeholder={`Search ${category} model...`}
-                              className="w-full h-8 pl-8 pr-2 rounded-lg border border-slate-200 text-[11px] focus:outline-none focus:border-[#F26522]"
-                            />
-                          </div>
-                        </div>
-                        <div className="max-h-44 overflow-y-auto divide-y divide-slate-100">
-                          {filteredModels.length === 0 ? (
-                            <div className="p-3 text-center text-[11px] text-slate-400">
-                              No enabled {category} models match "{modelSearch}".
-                            </div>
-                          ) : (
-                            filteredModels.map((m) => (
-                              <button
-                                key={m.id}
-                                type="button"
-                                onClick={() => {
-                                  setSelectedModelId(m.id);
-                                  setSelectedHardwareId('');
-                                  setIdSearchQuery('');
-                                  setModelDropdownOpen(false);
-                                  setModelSearch('');
-                                }}
-                                className={`w-full text-left px-3 py-2 hover:bg-orange-50/60 flex items-center justify-between gap-2 cursor-pointer ${
-                                  activeModelDef?.id === m.id ? 'bg-[#FFF3EE]' : ''
-                                }`}
-                              >
-                                <div className="min-w-0">
-                                  <div className="font-semibold text-slate-900 truncate">
-                                    {[m.typeName, m.manufacturer, m.modelReference].filter(Boolean).join(' · ')}
-                                  </div>
-                                  <div className="text-[10px] text-slate-500">
-                                    Search by: {getRecordIdentifierTypes(m).join(', ') || m.identifierType}
-                                    {m.category === 'Sensor' && m.connectionMode ? ` · ${m.connectionMode}` : ''}
-                                    {m.category === 'Device' && m.simSupported === 'Yes' ? ' · SIM Supported' : ''}
-                                  </div>
-                                </div>
-                              </button>
-                            ))
-                          )}
-                        </div>
-                      </div>
-                    )}
                   </div>
+                ) : (
+                  matchingUnits.map((unit) => {
+                    const alreadyInConn = members.some((m) => m.hardwareId === unit.hardwareId);
+                    const isSelected = selectedHardwareId === unit.hardwareId;
+                    const { activeBindings, activeConns } = getExistingHardwareAssignments(unit.hardwareId);
+                    const otherConnLabel = activeConns.map((c) => c.id).join(', ');
+                    const otherBind = activeBindings.find((b) => b.connectionId !== connId);
 
-                  {/* Identifier Search */}
-                  <div>
-                    <div className="flex items-center justify-between mb-1 gap-2">
-                      <div className="flex items-center gap-1.5">
-                        <label className="font-semibold text-slate-800">
-                          Search Registered {category} ({activeIdentifierLabel || 'ID'}) <span className="text-rose-600">*</span>
-                        </label>
-                        <MappingInfoTooltip text={MODAL_FIELD_TOOLTIPS.mapping.searchIdentifier} align="left" />
-                      </div>
+                    return (
                       <button
+                        key={unit.hardwareId}
                         type="button"
-                        onClick={() => setShowRegisterInline(true)}
-                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#F26522] hover:underline cursor-pointer shrink-0"
-                      >
-                        <Plus className="w-3 h-3" /> Add New {category}
-                      </button>
-                    </div>
-                    <div className="relative">
-                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                      <input
-                        type="text"
-                        value={idSearchQuery}
-                        onChange={(e) => {
-                          setIdSearchQuery(e.target.value);
-                          setSelectedHardwareId('');
-                          setShowRegisterInline(false);
+                        disabled={alreadyInConn}
+                        onClick={() => {
+                          setSelectedHardwareId(unit.hardwareId);
+                          setLocalError(null);
                         }}
-                        placeholder={
-                          category === 'Device'
-                            ? `Search ${activeIdentifierLabel} or unit ID (e.g. GTW-9032, GTW-9062)...`
-                            : category === 'Sensor'
-                            ? 'Search Sensor ID (e.g. SENS-10017, SENS-10027, DSR-8891)...'
-                            : 'Search SIM ICCID (e.g. 89918610431245100006)...'
-                        }
-                        className="w-full h-9 pl-8 pr-8 rounded-lg border border-slate-200 bg-white focus:outline-none focus:border-[#F26522]"
-                      />
-                      {idSearchQuery && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIdSearchQuery('');
-                            setSelectedHardwareId('');
-                          }}
-                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {crossTenantConflict && (
-                    <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-[11px] flex items-start gap-2">
-                      <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                      <span>{crossTenantConflict}</span>
-                    </div>
-                  )}
-
-                  {/* Search Results List */}
-                  <div className="border border-slate-200 rounded-xl bg-white max-h-48 overflow-y-auto divide-y divide-slate-100">
-                    {matchingUnits.length === 0 ? (
-                      <div className="p-4 text-center space-y-2">
-                        <div className="text-[11.5px] text-slate-500">
-                          No registered {category} matching "{idSearchQuery || activeModelDef?.typeName}" found under{' '}
-                          <strong className="text-slate-700">{targetClient}</strong>.
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setShowRegisterInline(true)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#F26522] hover:bg-[#d95417] text-white text-[11px] font-semibold cursor-pointer"
-                        >
-                          <Plus className="w-3.5 h-3.5" /> Register {category} for {targetClient}
-                        </button>
-                      </div>
-                    ) : (
-                      matchingUnits.map((unit) => {
-                        const alreadyInConn = members.some((m) => m.hardwareId === unit.hardwareId);
-                        const isSelected = selectedHardwareId === unit.hardwareId;
-                        const { activeBindings, activeConns } = getExistingHardwareAssignments(unit.hardwareId);
-                        const otherConnLabel = activeConns.map((c) => c.id).join(', ');
-                        const otherBind = activeBindings.find((b) => b.connectionId !== connId);
-
-                        return (
-                          <button
-                            key={unit.hardwareId}
-                            type="button"
-                            disabled={alreadyInConn}
-                            onClick={() => {
-                              setSelectedHardwareId(unit.hardwareId);
-                              setLocalError(null);
-                            }}
-                            className={`w-full text-left px-3 py-2 flex items-center justify-between gap-2 transition-colors ${
-                              alreadyInConn
-                                ? 'bg-slate-50 text-slate-400 cursor-not-allowed'
-                                : isSelected
-                                ? 'bg-[#FFF3EE] border-l-2 border-[#F26522]'
-                                : 'hover:bg-slate-50 cursor-pointer'
-                            }`}
-                          >
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-mono font-bold text-slate-900">
-                                  {category === 'Device' && unit.code !== unit.identifierValue
-                                    ? `${unit.code} · ${unit.identifierValue}`
-                                    : unit.identifierValue}
-                                </span>
-                                <span
-                                  className={`text-[10px] font-semibold px-1.5 py-0.2 rounded ${
-                                    unit.status === 'Inventory'
-                                      ? 'bg-emerald-50 text-emerald-700'
-                                      : 'bg-sky-50 text-sky-700'
-                                  }`}
-                                >
-                                  {unit.status}
-                                </span>
-                                {otherConnLabel && (
-                                  <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-amber-50 text-amber-800 border border-amber-200">
-                                    Bound in {otherConnLabel}
-                                    {otherBind
-                                      ? ` (${otherBind.mode} from ${formatDateTimeWithTz(otherBind.effectiveStartAt, otherBind.timezone)})`
-                                      : ''}
-                                  </span>
-                                )}
-                              </div>
-                              <div className="text-[11px] text-slate-500 truncate mt-0.5">{unit.subtitle}</div>
-                            </div>
+                        className={`w-full text-left px-3 py-2 flex items-center justify-between gap-2 transition-colors ${
+                          alreadyInConn
+                            ? 'bg-slate-50 text-slate-400 cursor-not-allowed'
+                            : isSelected
+                            ? 'bg-[#FFF3EE] border-l-2 border-[#F26522]'
+                            : 'hover:bg-slate-50 cursor-pointer'
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono font-bold text-slate-900">
+                              {category === 'Device' && unit.code !== unit.identifierValue
+                                ? `${unit.code} · ${unit.identifierValue}`
+                                : unit.identifierValue}
+                            </span>
                             <span
-                              className={`text-[11px] font-semibold shrink-0 px-2 py-0.5 rounded-md ${
-                                alreadyInConn
-                                  ? 'bg-slate-100 text-slate-400'
-                                  : isSelected
-                                  ? 'bg-[#F26522] text-white'
-                                  : 'text-[#F26522] bg-[#FFF3EE]'
+                              className={`text-[10px] font-semibold px-1.5 py-0.2 rounded ${
+                                unit.status === 'Inventory'
+                                  ? 'bg-emerald-50 text-emerald-700'
+                                  : 'bg-sky-50 text-sky-700'
                               }`}
                             >
-                              {alreadyInConn ? 'In Mapping' : isSelected ? 'Selected' : 'Select'}
+                              {unit.status}
                             </span>
-                          </button>
-                        );
-                      })
-                    )}
-                    {matchingUnits.length > 0 && (
-                      <div className="sticky bottom-0 px-3 py-2 bg-[#FFF9F6] border-t border-slate-200 flex items-center justify-between gap-2">
-                        <span className="text-[11px] text-slate-600">
-                          Can&apos;t find your {category} in {targetClient}?
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setShowRegisterInline(true)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-[#F26522] hover:bg-[#d95417] text-white text-[11px] font-semibold cursor-pointer shrink-0"
+                            {otherConnLabel && (
+                              <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-amber-50 text-amber-800 border border-amber-200">
+                                Bound in {otherConnLabel}
+                                {otherBind
+                                  ? ` (${otherBind.mode} from ${formatDateTimeWithTz(otherBind.effectiveStartAt, otherBind.timezone)})`
+                                  : ''}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-slate-500 truncate mt-0.5">{unit.subtitle}</div>
+                        </div>
+                        <span
+                          className={`text-[11px] font-semibold shrink-0 px-2 py-0.5 rounded-md ${
+                            alreadyInConn
+                              ? 'bg-slate-100 text-slate-400'
+                              : isSelected
+                              ? 'bg-[#F26522] text-white'
+                              : 'text-[#F26522] bg-[#FFF3EE]'
+                          }`}
                         >
-                          <Plus className="w-3 h-3" /> Create &amp; Register {category}
-                        </button>
-                      </div>
-                    )}
+                          {alreadyInConn ? 'In Mapping' : isSelected ? 'Selected' : 'Select'}
+                        </span>
+                      </button>
+                    );
+                  })
+                )}
+                {matchingUnits.length > 0 && (
+                  <div className="sticky bottom-0 px-3 py-2 bg-[#FFF9F6] border-t border-slate-200 flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-slate-600">
+                      Can&apos;t find your {category} in {targetClient}?
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowRegisterInline(true)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-[#F26522] hover:bg-[#d95417] text-white text-[11px] font-semibold cursor-pointer shrink-0"
+                    >
+                      <Plus className="w-3 h-3" /> Create &amp; Register {category}
+                    </button>
                   </div>
-                </>
-              )}
+                )}
+              </div>
             </div>
           )}
 
@@ -1019,8 +989,8 @@ export const HardwareCompositionModal: React.FC<HardwareCompositionModalProps> =
             </div>
           )}
 
-          {/* Binding Configuration (Shown whenever connecting to a Parent Device) */}
-          {parentHardwareId && (
+          {/* Binding Configuration (Shown whenever connecting to a Parent Device or Resource) */}
+          {(parentHardwareId || parentResourceLabel) && (
             <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wide">
@@ -1181,7 +1151,7 @@ export const HardwareCompositionModal: React.FC<HardwareCompositionModalProps> =
             <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-[11.5px] flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
               <span>
-                <strong>{activeModelDef?.typeName}</strong> is configured as Gateway-connected. Select a parent Device above or use{' '}
+                <strong>{selectedUnitModelDef?.typeName || selectedUnitSummary?.modelLabel || 'This Sensor'}</strong> is configured as Gateway-connected. Select a parent Device above or use{' '}
                 <strong>+ Sensor</strong> on a Device row.
               </span>
             </div>
@@ -1199,7 +1169,7 @@ export const HardwareCompositionModal: React.FC<HardwareCompositionModalProps> =
           </button>
 
           <div className="flex items-center gap-2">
-            {!isEditingBinding && category === 'Sensor' && parentHardwareId && (
+            {!isEditingBinding && category === 'Sensor' && (parentHardwareId || parentResourceLabel) && (
               <button
                 type="button"
                 disabled={liveValidation.errors.length > 0}
@@ -1229,9 +1199,9 @@ export const HardwareCompositionModal: React.FC<HardwareCompositionModalProps> =
             >
               {isEditingBinding
                 ? 'Update Binding'
-                : parentHardwareId
+                : parentHardwareId || parentResourceLabel
                 ? `Save ${category} & Binding`
-                : `Add Primary ${category}`}
+                : `Add ${category}`}
             </button>
           </div>
         </div>

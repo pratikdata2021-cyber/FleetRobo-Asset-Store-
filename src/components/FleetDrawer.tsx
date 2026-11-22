@@ -35,6 +35,7 @@ interface FleetDrawerProps {
   onClose: () => void;
   onSaveFleet: (fleet: Fleet) => void;
   onSwitchToEdit?: () => void;
+  zIndexClass?: string;
 }
 
 export const FleetDrawer: React.FC<FleetDrawerProps> = ({
@@ -45,7 +46,8 @@ export const FleetDrawer: React.FC<FleetDrawerProps> = ({
   initialTab = 'overview',
   onClose,
   onSaveFleet,
-  onSwitchToEdit
+  onSwitchToEdit,
+  zIndexClass = 'z-50'
 }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'drivers' | 'vehicles'>('overview');
 
@@ -362,7 +364,7 @@ export const FleetDrawer: React.FC<FleetDrawerProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden flex justify-end animate-in fade-in duration-150">
+    <div className={`fixed inset-0 ${zIndexClass} overflow-hidden flex justify-end animate-in fade-in duration-150`}>
       {/* Backdrop */}
       <div
         onClick={handleCloseAttempt}
